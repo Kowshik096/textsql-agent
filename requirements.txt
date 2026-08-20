@@ -1,0 +1,34 @@
+# ---- Agent orchestration ----
+langgraph
+langchain-core
+langchain-ollama
+ollama
+
+# ---- SQL parsing & guardrails ----
+sqlglot
+
+# ---- Validation ----
+pydantic>=2.0
+
+# ---- Data handling ----
+pandas
+
+# ---- Charts ----
+matplotlib
+
+# ---- API & UI ----
+fastapi
+uvicorn[standard]
+streamlit
+
+# ---- Observability ----
+langfuse
+
+# ---- Config & utils ----
+python-dotenv
+pyyaml
+tabulate
+rich
+
+# ---- Testing / CI gating ----
+pytest

@@ -1,0 +1,31 @@
+# --- virtualenv ---
+sqlagent_env/
+
+# --- data (~73 MB) ---------------------------------------------------------
+# The Olist CSVs and the built SQLite file stay out of history. Once a blob is
+# committed it is in the pack forever, even if deleted later. Rebuild with:
+#     python src/db.py
+# See data/README.md for where to get the CSVs.
+data/*.csv
+data/*.db
+!data/README.md
+
+# --- private build notes (not a deliverable) ---
+BUILD_LOG.md
+
+# --- eval cache (Day 3: per-case results so an interrupted run resumes) ---
+.eval_cache/
+
+# --- secrets ---
+.env
+
+# --- python ---
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+
+# --- os / editor ---
+Thumbs.db
+.DS_Store
+.vscode/
