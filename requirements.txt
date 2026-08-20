@@ -32,3 +32,7 @@ rich
 
 # ---- Testing / CI gating ----
 pytest
+
+# Exact versions are pinned in requirements.lock.txt (pip freeze).
+# Install from the lock file for reproducible runs, especially in CI:
+#     pip install -r requirements.lock.txt
