@@ -70,16 +70,37 @@ FORBIDDEN_NODES = (
 ALLOWED_ROOTS = (exp.Select, exp.Union, exp.Intersect, exp.Except, exp.Subquery)
 
 
+# System tables. Asking for these is never a model typo - sqlite_master
+# returns the schema of everything, so a request for one is a probe.
+SYSTEM_TABLE_PREFIX = "sqlite_"
+
+
 @dataclass
 class GuardResult:
     """
     ok=True  -> `sql` is the (possibly rewritten) query that is safe to run.
     ok=False -> `reason` says which check failed and why, for the user-facing
                 refusal, the Langfuse trace, and the adversarial eval score.
+
+    `category` decides what the agent does next, and the distinction matters
+    for both metrics the guardrails are judged on:
+
+      "security"    -> stop. No legitimate question makes the model emit DROP
+                       or probe sqlite_master, so retrying burns calls and
+                       lets a real attack look like a mere failure.
+      "correctable" -> retry. A hallucinated table name or malformed SQL is an
+                       ordinary model mistake; feeding the reason back usually
+                       fixes it.
+
+    Collapsing these into one behaviour costs you one metric or the other:
+    always blocking turns a hallucinated column into a false positive on the
+    functional suite, and always retrying means an attack is reported as a
+    failed query rather than a blocked one.
     """
     ok: bool
     sql: Optional[str] = None
     reason: Optional[str] = None
+    category: Optional[str] = None  # "security" | "correctable"
 
 
 def check(sql: str) -> GuardResult:
@@ -89,11 +110,13 @@ def check(sql: str) -> GuardResult:
     try:
         statements = sqlglot.parse(sql, dialect=DIALECT)
     except Exception as e:
-        return GuardResult(False, reason=f"could not be parsed as SQL: {e}")
+        return GuardResult(False, reason=f"could not be parsed as SQL: {e}",
+                           category="correctable")
 
     statements = [s for s in statements if s is not None]
     if not statements:
-        return GuardResult(False, reason="no SQL statement found")
+        return GuardResult(False, reason="no SQL statement found",
+                           category="correctable")
 
     # 2. exactly one statement
     if len(statements) > 1:
@@ -101,6 +124,7 @@ def check(sql: str) -> GuardResult:
             False,
             reason=f"expected one statement, found {len(statements)}; "
                    "stacked statements are not allowed",
+            category="security",
         )
 
     tree = statements[0]
@@ -112,12 +136,14 @@ def check(sql: str) -> GuardResult:
                 False,
                 reason=f"{type(node).__name__.upper()} is not permitted; "
                        "this agent may only read",
+                category="security",
             )
 
     if not isinstance(tree, ALLOWED_ROOTS):
         return GuardResult(
             False,
             reason=f"statement type {type(tree).__name__.upper()} is not a read",
+            category="security",
         )
 
     # 4. table allowlist
@@ -136,10 +162,12 @@ def check(sql: str) -> GuardResult:
         if not name or name in cte_names:
             continue
         if name not in ALLOWED_TABLES:
+            probing_system_table = name.startswith(SYSTEM_TABLE_PREFIX)
             return GuardResult(
                 False,
                 reason=f"table '{table.name}' is not in the allowed schema "
                        f"({', '.join(sorted(ALLOWED_TABLES))})",
+                category="security" if probing_system_table else "correctable",
             )
 
     return GuardResult(True, sql=_apply_row_limit(tree))

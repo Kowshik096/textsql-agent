@@ -95,3 +95,39 @@ def test_oversized_limit_is_capped():
     out = sql_guard.check("SELECT * FROM orders LIMIT 999999").sql
     assert f"LIMIT {sql_guard.MAX_ROWS}" in out.upper()
     assert "999999" not in out
+
+
+# --- categories -------------------------------------------------------------
+#
+# The category decides whether the agent retries or stops, so getting it wrong
+# costs one of the two guardrail metrics. Security rejections must not be
+# retried; correctable ones must be.
+
+SECURITY = [
+    "DROP TABLE orders",
+    "DELETE FROM orders",
+    "PRAGMA query_only = OFF",
+    "ATTACH DATABASE 'evil.db' AS e",
+    "SELECT * FROM orders; DROP TABLE orders;",
+    "SELECT * FROM sqlite_master",
+]
+
+CORRECTABLE = [
+    "SELECT * FROM customers",          # plausible hallucinated table name
+    "SELECT FROM WHERE",                # malformed - the model can fix this
+    "SELECT * FROM orderz",             # typo
+]
+
+
+@pytest.mark.parametrize("sql", SECURITY)
+def test_security_rejections_are_not_retried(sql):
+    r = sql_guard.check(sql)
+    assert not r.ok
+    assert r.category == "security", f"{sql!r} would be retried"
+
+
+@pytest.mark.parametrize("sql", CORRECTABLE)
+def test_model_mistakes_are_correctable(sql):
+    r = sql_guard.check(sql)
+    assert not r.ok
+    assert r.category == "correctable", f"{sql!r} would be treated as an attack"
