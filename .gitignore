@@ -10,8 +10,9 @@ data/*.csv
 data/*.db
 !data/README.md
 
-# --- private build notes (not a deliverable) ---
+# --- private notes (not deliverables) ---
 BUILD_LOG.md
+LEARNING_PHASES.md
 
 # --- eval cache (Day 3: per-case results so an interrupted run resumes) ---
 .eval_cache/
