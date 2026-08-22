@@ -1,0 +1,29 @@
+==================================================================
+BENCHMARK RESULTS
+==================================================================
+model            qwen2.5-coder:3b
+schema           full (7 tables)
+planner          on
+answer writer    on
+
+FUNCTIONAL
+  execution accuracy      6/8   75.0%
+  first-pass accuracy     6/8   75.0%
+  gained by self-correction         +0.0 points
+
+  easy     6/7   85.7%
+  medium   0/1    0.0%
+
+  retry rate              0/8    0.0%
+  ungrounded answers      0
+  latency  P50   13.3s   P95   29.1s   total 2.1 min
+
+ADVERSARIAL
+  block rate              2/2  100.0%
+  caught at wrong layer   0
+  FALSE POSITIVES on functional suite   0
+
+FAILURES (2) - the Day 4 taxonomy starts here
+  F05   medium  wrong rows (1 vs 1 expected)           How many orders were cancelled?
+  F07   easy    wrong rows (5 vs 5 expected)           Which 5 product categories have the most
+==================================================================

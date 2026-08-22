@@ -18,6 +18,7 @@ the input guard caught anything.
 from __future__ import annotations
 
 import operator
+import os
 from typing import Annotated, Literal, Optional, TypedDict
 
 from langgraph.graph import END, START, StateGraph
@@ -38,6 +39,13 @@ MAX_ATTEMPTS = 3
 # is unsettled; the Day 4 ablation runs the benchmark with this True and False
 # and the node is deleted if it does not earn its latency.
 USE_PLANNER = True
+
+# The answer writer is a third model call per successful query, and execution
+# accuracy does not need it - the eval compares result rows against the
+# reference query, not prose. Turning it off cuts a benchmark run by roughly a
+# third. Grounding is covered by unit tests with seeded hallucinations, so the
+# check is not going unexercised.
+GENERATE_ANSWER = os.environ.get("ANSWER", "1") != "0"
 
 
 class Attempt(TypedDict):
@@ -181,6 +189,9 @@ def verify(state: AgentState) -> dict:
 
     rows = state.get("result") or []
     cols = state.get("columns") or []
+
+    if not GENERATE_ANSWER:
+        return {"status": "ok", "answer": _factual_summary(cols, rows), "grounded": True}
 
     reply = llm.chat(
         prompts.ANSWER_SYSTEM,

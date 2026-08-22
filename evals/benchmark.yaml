@@ -54,10 +54,21 @@ functional:
 
   - id: F07
     difficulty: easy
-    question: Which 5 product categories have the most products?
+    question: Which 5 product categories have the most products, using the Portuguese category names?
     reference_sql: >
       SELECT product_category_name, COUNT(*) AS n FROM products
       GROUP BY product_category_name ORDER BY n DESC LIMIT 5
+    assumption: >
+      The language had to be stated. On the first smoke run the model joined
+      category_translation and answered in English - bed_bath_table 3029,
+      sports_leisure 2867 - against a Portuguese reference. The counts were
+      identical; only the labels differed, and exact-match scoring cannot see
+      that both answers are right.
+
+      That is a real limitation of execution accuracy as a metric, and the fix
+      belongs in the question rather than the comparison: loosening the
+      comparison to ignore labels would also stop it catching genuinely wrong
+      groupings. F54 asks for English explicitly for the same reason.
 
   - id: F08
     difficulty: easy
