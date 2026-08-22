@@ -42,12 +42,22 @@ import db
 
 DIALECT = "sqlite"
 
-# Derived from the loaded schema rather than duplicated, so the guard cannot
-# drift out of sync with the database - including under the Day 4 ablation,
-# where SCHEMA=core must also make the extended tables un-queryable. Anything
-# outside it, including sqlite_master and any Olist table we chose not to
-# load, is refused.
-ALLOWED_TABLES = set(db.TABLES)
+def allowed_tables() -> set:
+    """
+    The tables this agent may read, taken from the loaded schema rather than
+    duplicated here, so the guard cannot drift out of sync with the database.
+
+    Read at call time, not import time. A module-level constant looked
+    equivalent and was not: `ALLOWED_TABLES = set(db.TABLES)` is evaluated once
+    when sql_guard is first imported, so reloading db under SCHEMA=core left
+    the guard still permitting `customers` - the ablation would have silently
+    run with a 4-table schema and a 7-table guard.
+
+    That mattered because the failure was in the safe direction only by luck.
+    A guard whose allowlist is wider than the schema is a guard that has
+    stopped enforcing the thing it claims to enforce.
+    """
+    return set(db.TABLES)
 
 # Cost control, not security: stops one bad GROUP BY from streaming 112k rows
 # into the prompt. Applied by rewriting the query, not by trusting the model.
@@ -162,16 +172,17 @@ def check(sql: str) -> GuardResult:
         if cte.alias_or_name
     }
 
+    permitted = allowed_tables()
     for table in tree.find_all(exp.Table):
         name = (table.name or "").lower()
         if not name or name in cte_names:
             continue
-        if name not in ALLOWED_TABLES:
+        if name not in permitted:
             probing_system_table = name.startswith(SYSTEM_TABLE_PREFIX)
             return GuardResult(
                 False,
                 reason=f"table '{table.name}' is not in the allowed schema "
-                       f"({', '.join(sorted(ALLOWED_TABLES))})",
+                       f"({', '.join(sorted(permitted))})",
                 category="security" if probing_system_table else "correctable",
             )
 

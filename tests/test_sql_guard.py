@@ -131,3 +131,28 @@ def test_model_mistakes_are_correctable(sql):
     r = sql_guard.check(sql)
     assert not r.ok
     assert r.category == "correctable", f"{sql!r} would be treated as an attack"
+
+
+# --- the allowlist must follow the schema at call time ----------------------
+
+def test_allowlist_tracks_the_loaded_schema(monkeypatch):
+    """
+    Reading db.TABLES once at import time looked equivalent to reading it at
+    call time and was not: reloading db under SCHEMA=core left the guard still
+    permitting the extended tables, so the ablation would have run a 4-table
+    schema behind a 7-table guard.
+
+    An allowlist wider than the schema is a guard that has stopped enforcing
+    the thing it claims to enforce.
+    """
+    import db
+
+    monkeypatch.setattr(db, "TABLES", {"orders": "x.csv", "order_items": "y.csv"})
+
+    assert sql_guard.allowed_tables() == {"orders", "order_items"}
+
+    blocked = sql_guard.check("SELECT * FROM customers")
+    assert not blocked.ok, "a table outside the loaded schema must be refused"
+    assert "customers" in blocked.reason
+
+    assert sql_guard.check("SELECT * FROM orders").ok
