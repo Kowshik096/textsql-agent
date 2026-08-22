@@ -84,8 +84,11 @@ def test_the_error_text_reaches_the_next_prompt(scripted):
 
     graph.answer("Which sellers exist?")
 
-    assert len(sent) == 2, "expected a second generation call"
-    retry_prompt = sent[1]
+    # verify() also calls the model to write the answer; that prompt ends in
+    # "ANSWER:" rather than "SQL:". Only the generation prompts are relevant.
+    generation = [p for p in sent if not p.rstrip().endswith("ANSWER:")]
+    assert len(generation) == 2, "expected a second generation call"
+    retry_prompt = generation[1]
     assert "no such column" in retry_prompt.lower()
     assert "o.price" in retry_prompt, "the failed SQL itself must be shown"
     assert "PREVIOUS ATTEMPTS" in retry_prompt
@@ -154,3 +157,52 @@ def test_layer_3_the_database_itself_refuses_with_both_guards_disabled():
 def test_sql_guard_does_not_depend_on_the_input_guard():
     """The layers are independent - sql_guard sees only SQL, never the question."""
     assert sql_guard.check("DROP TABLE orders").category == "security"
+
+
+# --- layer 3: output grounding ----------------------------------------------
+#
+# The Day 3 milestone. A seeded hallucination must fail safely: the rows are
+# sound, so they are kept; only the model's prose is discarded.
+
+def test_hallucinated_number_fails_safely(scripted):
+    scripted(
+        "```sql\nSELECT seller_id FROM sellers LIMIT 3\n```",
+        "The top 3 sellers earned 987654.32 between them.",
+    )
+
+    final = graph.answer("Which 3 sellers exist?")
+
+    assert final["status"] == "ok", "the query succeeded; the data is still good"
+    assert final["grounded"] is False
+    assert "987654.32" not in final["answer"], "the invented number must not survive"
+    assert final["result"], "correct rows must not be discarded with the prose"
+    assert "987654.32" in final["grounding_reason"]
+
+
+def test_the_fallback_summary_is_itself_grounded(scripted):
+    """
+    A safe fallback that could fail the grounding check would be worse than
+    useless, so it only ever states the row count and values copied verbatim.
+    """
+    import grounding
+
+    scripted(
+        "```sql\nSELECT seller_id FROM sellers LIMIT 3\n```",
+        "Revenue totalled 123456.78 across the board.",
+    )
+
+    final = graph.answer("Which 3 sellers exist?")
+
+    assert grounding.check(final["answer"], final["result"], final["question"]).ok
+
+
+def test_a_clean_answer_passes_through_untouched(scripted):
+    scripted(
+        "```sql\nSELECT seller_id FROM sellers LIMIT 3\n```",
+        "Three sellers were returned.",
+    )
+
+    final = graph.answer("Which 3 sellers exist?")
+
+    assert final["grounded"] is True
+    assert final["answer"] == "Three sellers were returned."

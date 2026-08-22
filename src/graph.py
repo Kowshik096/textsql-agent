@@ -24,6 +24,7 @@ from langgraph.graph import END, START, StateGraph
 
 import db
 import executor
+import grounding
 import input_guard
 import llm
 import prompts
@@ -73,6 +74,9 @@ class AgentState(TypedDict, total=False):
     blocked: Optional[Blocked]
     answer: str
     status: Literal["ok", "failed", "blocked"]
+    grounded: bool
+    grounding_reason: Optional[str]
+    chart_path: Optional[str]
 
 
 def last_error(state: AgentState) -> Optional[str]:
@@ -177,10 +181,44 @@ def verify(state: AgentState) -> dict:
 
     rows = state.get("result") or []
     cols = state.get("columns") or []
+
+    reply = llm.chat(
+        prompts.ANSWER_SYSTEM,
+        prompts.build_answer_prompt(state["question"], cols, rows),
+    )
+    answer = reply.text.strip()
+
+    verdict = grounding.check(answer, rows, state["question"])
+    if verdict.ok:
+        return {"status": "ok", "answer": answer, "grounded": True}
+
+    # Layer 3 fired. The SQL ran and the rows are sound - only the narration
+    # is suspect - so the safe failure is to keep the data and drop the prose,
+    # not to discard a correct result. Deliberately no second model call: a
+    # rewrite would cost another ~11s and might invent a different number.
     return {
         "status": "ok",
-        "answer": f"{len(rows)} row(s) returned with columns {cols}.",
+        "answer": _factual_summary(cols, rows),
+        "grounded": False,
+        "grounding_reason": verdict.reason,
     }
+
+
+def _factual_summary(columns, rows) -> str:
+    """
+    A deterministic stand-in for the model's prose. Every number in it is the
+    row count or a value copied straight from the result, so it is grounded
+    by construction - a fallback that could itself fail the check would be
+    worse than useless.
+    """
+    if not rows:
+        return "The query returned no rows."
+
+    head = rows[0]
+    pairs = ", ".join(f"{c}={v}" for c, v in zip(columns or [], head))
+    if len(rows) == 1:
+        return f"The query returned 1 row: {pairs}."
+    return f"The query returned {len(rows)} rows. The first is {pairs}."
 
 
 # --- routing ----------------------------------------------------------------

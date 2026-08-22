@@ -71,10 +71,9 @@ def build_generator_prompt(
         With only the most recent failure visible, the model can oscillate:
         fix the join and break the filter, then fix the filter and reinstate
         the original join, forever. Showing the full history is what lets it
-        avoid a query it has already tried. The cost is bounded - three
-        attempts add roughly 300-400 tokens to a 966-token schema prompt,
-        well inside num_ctx 8192 - and that headroom is exactly why 8192 was
-        chosen over 4096 on Day 1.
+        avoid a query it has already tried. The cost is bounded - measured on
+        Day 2 at roughly 90 tokens across three attempts on top of a 966-token
+        schema prompt, peaking at 13% of num_ctx 8192.
     """
     parts = [schema, f"QUESTION: {question}"]
 
@@ -95,6 +94,60 @@ def build_generator_prompt(
 
     parts.append("SQL:")
     return "\n\n".join(parts)
+
+
+# --- answer writer ----------------------------------------------------------
+#
+# The last model call in the pipeline. It only ever sees rows SQLite actually
+# returned, so it cannot be wrong about the data - only about what it says
+# regarding the data, which is what grounding.py checks afterwards.
+#
+# The "do not compute" rule is the highest-leverage line here. Left to itself
+# the model likes to add a total, a percentage or an average that was never in
+# the result set, and every one of those is an ungrounded number. Forbidding
+# the behaviour up front is cheaper than catching it downstream - though the
+# check still runs, because a prompt is a request.
+
+ANSWER_SYSTEM = """You are a data analyst reporting a query result.
+
+Write ONE or TWO sentences answering the question from the rows given.
+
+Rules:
+- Use ONLY numbers that appear in the rows. Copy them exactly.
+- Do NOT compute totals, percentages, averages or differences. If a number is
+  not in the rows, do not state it.
+- If the result is empty, say so plainly.
+- No preamble, no SQL, no bullet points."""
+
+
+def build_answer_prompt(question: str, columns, rows, max_rows: int = 20) -> str:
+    """
+    Render the result set for the answer writer.
+
+    Only the first `max_rows` are shown: a 1000-row result would dominate the
+    context window, and the prose answer concerns the head of the data anyway.
+    The total is stated separately so the model can refer to it without
+    inventing it - the row count is one of the four sources grounding.py
+    accepts as legitimate.
+    """
+    header = " | ".join(columns or [])
+    body = "\n".join(
+        " | ".join("" if cell is None else str(cell) for cell in row)
+        for row in (rows or [])[:max_rows]
+    )
+
+    total = len(rows or [])
+    note = (
+        ""
+        if total <= max_rows
+        else f"\n... ({total} rows in total, first {max_rows} shown)"
+    )
+
+    return (
+        f"QUESTION: {question}\n\n"
+        f"RESULT ({total} row(s)):\n{header}\n{body}{note}\n\n"
+        f"ANSWER:"
+    )
 
 
 # --- input guard ------------------------------------------------------------
