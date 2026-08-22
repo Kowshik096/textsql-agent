@@ -180,7 +180,64 @@ semantic policies (revenue definition, status filter, date basis, order
 counting, filter scope) are recorded in `evals/POLICY.md` and applied
 throughout.
 
-## 15. Local model, and the comparison is the point
+## 15. The eval compares rows, never asks a model to judge
+
+Execution accuracy is a data comparison: the agent's rows against the reference
+query's rows. No LLM judging another LLM.
+
+This is the structural advantage a SQL agent has over a retrieval system, and
+giving it up for convenience would give up the whole argument. Rows are sorted
+before comparison, because a question that does not say "ordered by" has no
+defined row order and two correct answers may differ in sequence. Floats round
+to two decimals, because currency sums differ in their last bits depending on
+summation order and a benchmark that fails on 1e-9 is one nobody trusts.
+
+The limitation is real and worth stating: exact match cannot tell that two
+correct answers differ only in presentation. One case scored wrong when the
+model answered with English category names against a Portuguese reference —
+identical counts, different labels. The fix belongs in the question, not in
+loosening the comparison, which would also stop it catching genuinely wrong
+groupings.
+
+## 16. Block rate is never reported alone
+
+A guard that refuses everything scores 100% on an adversarial suite. So the
+false-positive count on the functional suite sits directly beneath it, and one
+number without the other is not a security result.
+
+There is a sharper version of the same point. Block rate answers *was it
+blocked*, when the question that matters is *did anything harmful happen*. A
+question the model answers safely by ignoring the dangerous half is a good
+outcome scored as a miss.
+
+## 17. Charts render only when the result is worth looking at
+
+One label column, one numeric column, between 2 and 25 rows. Everything else
+returns None and the caller shows the table.
+
+The decision that matters is when *not* to draw. An agent that charts
+everything produces a one-bar chart for "how many sellers are there" and an
+illegible 200-label axis for anything ungrouped, and both cost the reader time
+before they can be dismissed. Chart type comes from the data rather than
+configuration: ordered periods become a line because the question is about a
+trend, everything else becomes horizontal bars because the question is about a
+ranking and horizontal bars leave room for 32-character identifiers.
+
+Rendering never raises. A chart is a nicety, and an agent that fails a correct
+query because matplotlib had an opinion about a font is worse than one with no
+charts.
+
+## 18. Results are cached per case, keyed on everything that could change them
+
+Model, schema configuration, planner setting, answer setting. A run that dies
+at case 47 resumes rather than restarting, which matters when a full run takes
+over half an hour and when a metered API tier counts requests per day.
+
+Keying on the configuration rather than the case id alone is the part that is
+easy to get wrong: a cache that returns a 4-table result during a 7-table run
+produces a clean-looking comparison of nothing.
+
+## 19. Local model, and the comparison is the point
 
 Qwen2.5-Coder-3B via Ollama: zero API cost, no data leaves the machine, and it
 fits a 4–5 GB budget — 2.4 GB resident at 8192 context, measured.
@@ -190,7 +247,7 @@ that the number is good, but that the constraint was treated as a design
 parameter and measured: accuracy against model size, holding tuning constant so
 the comparison isolates size rather than confounding it with coder-tuning.
 
-## 16. Known limitations
+## 20. Known limitations
 
 - **Prompt injection is not solved.** The input filter catches known phrasings
   and nothing more. The honest defence is that layer 2 does not trust layer 1.
@@ -201,5 +258,10 @@ the comparison isolates size rather than confounding it with coder-tuning.
   out. Check whether a slow case is wrong or merely unindexed.
 - **Answer prose is weak on a 3B model.** It tends to return bare identifier
   lists rather than sentences.
+- **The self-correction loop currently recovers nothing.** Measured at
+  baseline: twelve retries, zero recoveries, byte-identical SQL each time. The
+  error text reaches the prompt; at temperature 0 the model is not sensitive
+  enough to it to change a token. This is the honest state, and the thing
+  Day 4 exists to fix.
 - **Repeat-customer analysis is thin.** 2,997 of 96,096 people ordered more
   than once; only 19 have five or more orders.
