@@ -607,6 +607,50 @@ functional:
       same combination. Reading either one alone halves the answer, and the
       output looks like a clean frequency table either way.
 
+  - id: F62
+    difficulty: hard
+    question: What is the median delivery time in days?
+    reference_sql: >
+      SELECT julianday(order_delivered_customer_date) - julianday(order_purchase_timestamp) AS d
+      FROM orders WHERE order_delivered_customer_date IS NOT NULL
+      ORDER BY d LIMIT 1 OFFSET (
+        SELECT COUNT(*) / 2 FROM orders WHERE order_delivered_customer_date IS NOT NULL
+      )
+    assumption: >
+      SQLite has no median function, so this is ORDER BY with LIMIT 1 OFFSET
+      n/2 - the lower of the two middle values on an even count, taken as the
+      definition here for determinism.
+
+      Worth contrasting with F42, the mean, at 12.6 days against a median of
+      10.2. The gap is the tail: the slowest delivery in the dataset took 209
+      days, and p95 is 29.3. Reporting the mean alone overstates what a typical
+      customer experiences, which is the same reason latency is reported at P50
+      and P95 rather than as an average.
+
+  - id: F63
+    difficulty: hard
+    question: Which 5 customer states have the slowest average delivery time?
+    reference_sql: >
+      SELECT c.customer_state,
+             AVG(julianday(o.order_delivered_customer_date)
+                 - julianday(o.order_purchase_timestamp)) AS avg_days
+      FROM orders o JOIN customers c ON o.customer_id = c.customer_id
+      WHERE o.order_delivered_customer_date IS NOT NULL
+      GROUP BY c.customer_state
+      HAVING COUNT(*) > 300
+      ORDER BY avg_days DESC LIMIT 5
+    assumption: >
+      Buyer state, and only delivered orders - an order that never arrived has
+      no delivery time, and julianday(NULL) would poison the average silently
+      rather than erroring.
+
+      A volume floor of 300 keeps states with a handful of orders out of the
+      ranking, where one outlier would otherwise decide the answer.
+
+      The result pairs with F58: AL, PA, MA, SE and CE all source under 2% of
+      their items locally and wait 21-25 days, against SP at 76% local and 8.7
+      days. Absent local supply and slow delivery are the same phenomenon.
+
   # --- supply-side geography ------------------------------------------------
   #
   # The hardest cases in the set. Both require customer_state AND seller_state
