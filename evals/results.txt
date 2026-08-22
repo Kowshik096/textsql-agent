@@ -7,23 +7,47 @@ planner          on
 answer writer    on
 
 FUNCTIONAL
-  execution accuracy      6/8   75.0%
-  first-pass accuracy     6/8   75.0%
+  execution accuracy      25/63   39.7%
+  first-pass accuracy     25/63   39.7%
   gained by self-correction         +0.0 points
 
-  easy     6/7   85.7%
-  medium   0/1    0.0%
+  easy     11/13   84.6%
+  medium   10/22   45.5%
+  hard     4/28   14.3%
 
-  retry rate              0/8    0.0%
-  ungrounded answers      0
-  latency  P50   13.3s   P95   29.1s   total 2.1 min
+  retry rate              12/63   19.0%
+  ungrounded answers      2
+  latency  P50   31.4s   P95   67.4s   total 35.5 min
 
 ADVERSARIAL
-  block rate              2/2  100.0%
+  block rate              11/15   73.3%
   caught at wrong layer   0
   FALSE POSITIVES on functional suite   0
 
-FAILURES (2) - the Day 4 taxonomy starts here
+FAILURES (38) - the Day 4 taxonomy starts here
   F05   medium  wrong rows (1 vs 1 expected)           How many orders were cancelled?
   F07   easy    wrong rows (5 vs 5 expected)           Which 5 product categories have the most
+  F11   easy    wrong rows (1 vs 1 expected)           What is the highest price paid for a sin
+  F14   medium  wrong rows (5 vs 5 expected)           Which 5 product categories generated the
+  F17   medium  wrong rows (6 vs 8 expected)           How many orders are there in each status
+  F19   medium  failed                                 Which 5 products generated the most reve
+  F20   medium  wrong rows (1 vs 1 expected)           What is the average number of items per 
+  F22   medium  wrong rows (1000 vs 1 expected)        How many orders contain more than one it
+  F23   medium  failed                                 Which 5 sellers received the most orders
+  F25   medium  wrong rows (5 vs 5 expected)           Which 5 product categories have the high
+  F26   medium  wrong rows (3 vs 3 expected)           How many orders were placed in each year
+  F30   hard    wrong rows (4 vs 3 expected)           What was the total revenue in each year?
+  F31   hard    wrong rows (0 vs 1 expected)           How many sellers have sold products in m
+  F32   hard    wrong rows (5 vs 5 expected)           Which 5 product categories have the high
+  F34   hard    wrong rows (0 vs 1 expected)           What is the average revenue per seller?
+  F35   hard    wrong rows (1 vs 1 expected)           How many orders were delivered later tha
+  F36   hard    wrong rows (5 vs 5 expected)           Which 5 sellers generated the most reven
+  F37   hard    wrong rows (1 vs 1 expected)           What share of orders were cancelled?
+  F38   hard    failed                                 Which 5 sellers have the highest average
+  F39   hard    failed                                 How many sellers generated more revenue 
+  F40   hard    wrong rows (5 vs 5 expected)           Which 5 product categories have the heav
+  F41   hard    wrong rows (1 vs 1 expected)           How many orders have not been delivered 
+  F42   hard    wrong rows (1 vs 1 expected)           What is the average delivery time in day
+  F43   hard    wrong rows (1 vs 1 expected)           What is the average time in hours betwee
+  F44   hard    wrong rows (1 vs 1 expected)           What is the average revenue per order?
 ==================================================================

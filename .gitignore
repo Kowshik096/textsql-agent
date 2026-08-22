@@ -33,3 +33,7 @@ Thumbs.db
 
 # --- generated charts ---
 charts/
+
+# --- eval run artefacts (derived; results.json/.txt are the record) ---
+evals/.cache/
+evals/*.log
