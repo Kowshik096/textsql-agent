@@ -329,6 +329,90 @@ functional:
       FROM products WHERE product_weight_g IS NOT NULL
       GROUP BY product_category_name ORDER BY avg_weight DESC LIMIT 5
 
+  # --- date arithmetic ------------------------------------------------------
+  #
+  # These three test comprehension rather than syntax, which most of the set
+  # above does not. F41 in particular has two plausible readings and only one
+  # correct one.
+
+  - id: F41
+    difficulty: medium
+    question: How many orders have not been delivered yet?
+    reference_sql: >
+      SELECT COUNT(*) FROM orders WHERE order_status != 'delivered'
+    assumption: >
+      A genuine negation over the status enum, not a synonym for cancelled.
+      The naive reading - order_status = 'canceled' - gives 625; the correct
+      one gives 2,963, because 1,107 shipped orders are in transit and
+      perfectly healthy. Both are valid SQL that runs instantly and returns a
+      plausible integer, which is what makes this case worth having: it
+      discriminates on comprehension, and nothing in the pipeline would flag
+      the wrong one.
+
+  - id: F42
+    difficulty: hard
+    question: What is the average delivery time in days?
+    reference_sql: >
+      SELECT AVG(julianday(order_delivered_customer_date)
+                 - julianday(order_purchase_timestamp))
+      FROM orders WHERE order_delivered_customer_date IS NOT NULL
+    assumption: >
+      Purchase to customer receipt, not to carrier handover. The NULL filter
+      is required, not optional - 2,965 orders never reached the customer, and
+      julianday(NULL) silently poisons the average rather than erroring.
+
+  - id: F43
+    difficulty: hard
+    question: What is the average time in hours between an order being placed and approved?
+    reference_sql: >
+      SELECT AVG((julianday(order_approved_at)
+                  - julianday(order_purchase_timestamp)) * 24)
+      FROM orders WHERE order_approved_at IS NOT NULL
+    assumption: >
+      Hours, so the julianday difference (which is in days) is multiplied by
+      24. 160 orders have no approval timestamp and are excluded - 141 of them
+      cancelled, which is 23% of all cancelled orders. That skew is the reason
+      order_approved_at is not the benchmark's date basis (policy 3).
+
+  # --- per-order economics --------------------------------------------------
+
+  - id: F44
+    difficulty: hard
+    question: What is the average revenue per order?
+    reference_sql: >
+      SELECT SUM(oi.price) / COUNT(DISTINCT oi.order_id)
+      FROM order_items oi JOIN orders o ON oi.order_id = o.order_id
+      WHERE o.order_status NOT IN ('canceled','unavailable')
+    assumption: >
+      Per order, not per line item - the denominator is
+      COUNT(DISTINCT order_id) (policy 4). Dividing by COUNT(*) instead would
+      give average revenue per *item* and understate this by about 12%, since
+      there are 1.14 items per order. Both are valid SQL returning a plausible
+      figure in the same range.
+
+  - id: F45
+    difficulty: medium
+    question: Which single order had the highest total value?
+    reference_sql: >
+      SELECT order_id, SUM(price) AS order_value
+      FROM order_items GROUP BY order_id ORDER BY order_value DESC LIMIT 1
+
+
+# --- not answerable with this schema ----------------------------------------
+#
+# Recorded so they are not proposed again, and because the reason is a real
+# limitation worth being able to state.
+#
+# Repeat-customer analysis - order frequency segments, time between a
+# customer's consecutive orders, revenue per customer above a minimum order
+# count - cannot be expressed here. `orders.customer_id` is unique per order:
+# 99,441 orders, 99,441 distinct values, no customer with a second order. The
+# person-level key is `customer_unique_id`, which lives in the customers table
+# excluded when the schema was trimmed to four on Day 1.
+#
+# Written blind, those cases would have produced empty result sets as ground
+# truth and graded the model against nothing.
+
 
 # --- adversarial ------------------------------------------------------------
 #
