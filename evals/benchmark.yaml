@@ -33,12 +33,19 @@ functional:
     reference_sql: SELECT COUNT(*) FROM orders WHERE order_status = 'delivered'
 
   - id: F05
-    difficulty: easy
+    difficulty: medium
     question: How many orders were cancelled?
-    reference_sql: SELECT COUNT(*) FROM orders WHERE order_status = 'canceled'
+    reference_sql: >
+      SELECT COUNT(*) FROM orders
+      WHERE order_status IN ('canceled','unavailable')
     assumption: >
-      Counting question, so the status filter does not apply (policy 5) -
-      otherwise this question could not be asked at all.
+      Both terminal-failure statuses count as a cancellation (policy 8), so
+      1,234 rather than the 625 with status 'canceled' alone. From the
+      customer's side the outcome is identical - no goods, money back - and
+      Day 1 already treats the two as equivalent for revenue.
+
+      Counting question, so the revenue status filter does not otherwise apply
+      (policy 5); if it did, this question could not be asked at all.
 
   - id: F06
     difficulty: easy
@@ -299,8 +306,13 @@ functional:
     difficulty: hard
     question: What share of orders were cancelled?
     reference_sql: >
-      SELECT CAST(SUM(CASE WHEN order_status = 'canceled' THEN 1 ELSE 0 END) AS REAL)
+      SELECT CAST(SUM(CASE WHEN order_status IN ('canceled','unavailable') THEN 1 ELSE 0 END) AS REAL)
              / COUNT(*) FROM orders
+    assumption: >
+      Same definition as F05 (policy 8): 1.24%, not the 0.63% that 'canceled'
+      alone gives. The two must agree - a benchmark that answers "how many were
+      cancelled" and "what share were cancelled" from different definitions is
+      internally inconsistent.
 
   - id: F38
     difficulty: hard
@@ -336,18 +348,26 @@ functional:
   # correct one.
 
   - id: F41
-    difficulty: medium
+    difficulty: hard
     question: How many orders have not been delivered yet?
     reference_sql: >
-      SELECT COUNT(*) FROM orders WHERE order_status != 'delivered'
+      SELECT COUNT(*) FROM orders
+      WHERE order_status NOT IN ('delivered','canceled','unavailable')
     assumption: >
-      A genuine negation over the status enum, not a synonym for cancelled.
-      The naive reading - order_status = 'canceled' - gives 625; the correct
-      one gives 2,963, because 1,107 shipped orders are in transit and
-      perfectly healthy. Both are valid SQL that runs instantly and returns a
-      plausible integer, which is what makes this case worth having: it
-      discriminates on comprehension, and nothing in the pipeline would flag
-      the wrong one.
+      "Yet" means still in flight - shipped, invoiced, processing, created or
+      approved - so 1,729. Cancelled and unavailable orders are not awaiting
+      delivery; they are never arriving, and policy 8 already counts them as
+      cancellations. Leaving them in would have the benchmark counting the same
+      1,234 orders under two contradictory labels, in F05 and here.
+
+      The sharpest case in the set, because four readings are all valid SQL
+      returning a plausible integer, and nothing in the pipeline can separate
+      them:
+        625   status = 'canceled'                     (F05's old answer)
+        1,234 canceled + unavailable                  (F05's answer, wrong here)
+        2,963 everything not 'delivered'              (ignores that 1,234 are dead)
+        1,729 still moving                            (correct)
+      It discriminates purely on comprehension.
 
   - id: F42
     difficulty: hard
