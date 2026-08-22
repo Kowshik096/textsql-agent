@@ -23,6 +23,7 @@ from typing import Annotated, Literal, Optional, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
+import charts
 import db
 import executor
 import grounding
@@ -190,8 +191,15 @@ def verify(state: AgentState) -> dict:
     rows = state.get("result") or []
     cols = state.get("columns") or []
 
+    # Charts are cheap and independent of the model, so they are drawn on both
+    # the answer-generating path and the eval path. render() returns None for
+    # anything not worth drawing - a scalar, or 200 rows - so most results get
+    # no chart and that is the intended outcome.
+    chart = charts.render(state["question"], cols, rows)
+
     if not GENERATE_ANSWER:
-        return {"status": "ok", "answer": _factual_summary(cols, rows), "grounded": True}
+        return {"status": "ok", "answer": _factual_summary(cols, rows),
+                "grounded": True, "chart_path": chart}
 
     reply = llm.chat(
         prompts.ANSWER_SYSTEM,
@@ -201,7 +209,8 @@ def verify(state: AgentState) -> dict:
 
     verdict = grounding.check(answer, rows, state["question"])
     if verdict.ok:
-        return {"status": "ok", "answer": answer, "grounded": True}
+        return {"status": "ok", "answer": answer, "grounded": True,
+                "chart_path": chart}
 
     # Layer 3 fired. The SQL ran and the rows are sound - only the narration
     # is suspect - so the safe failure is to keep the data and drop the prose,
@@ -212,6 +221,7 @@ def verify(state: AgentState) -> dict:
         "answer": _factual_summary(cols, rows),
         "grounded": False,
         "grounding_reason": verdict.reason,
+        "chart_path": chart,
     }
 
 
