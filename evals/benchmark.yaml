@@ -556,6 +556,35 @@ functional:
       wrong. The subquery keeps the grain at one row per item.
 
 
+  - id: F59
+    difficulty: medium
+    question: What percentage of orders were paid by credit card?
+    reference_sql: >
+      SELECT CAST(COUNT(DISTINCT order_id) AS REAL)
+             / (SELECT COUNT(*) FROM orders)
+      FROM order_payments WHERE payment_type = 'credit_card'
+    assumption: >
+      COUNT(DISTINCT order_id), not COUNT(*) - an order can have several
+      credit-card payment rows. 76.9%.
+
+      Note the shares across payment types sum to 102.3%, not 100%: 2,246
+      orders mix types, so an order paid partly by voucher and partly by card
+      counts in both. The remaining share cannot be obtained by subtraction.
+
+  - id: F60
+    difficulty: hard
+    question: How many orders were paid using more than one payment type?
+    reference_sql: >
+      SELECT COUNT(*) FROM (
+        SELECT order_id FROM order_payments
+        GROUP BY order_id HAVING COUNT(DISTINCT payment_type) > 1
+      )
+    assumption: >
+      Distinct payment *types*, not payment rows. 2,246 orders mix types;
+      2,961 have more than one payment row, so counting rows instead of
+      distinct types overstates by 715 - an order split into three
+      credit-card instalment rows is not paying in three different ways.
+
   # --- supply-side geography ------------------------------------------------
   #
   # The hardest cases in the set. Both require customer_state AND seller_state

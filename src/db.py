@@ -106,7 +106,7 @@ COLUMN_NOTES = {
         "joining orders to order_payments multiplies order rows - never SUM "
         "order revenue across that join. Order revenue is SUM(order_items.price)"
     ),
-    "order_payments.payment_type": "one of: credit_card, boleto, voucher, debit_card, not_defined",
+    "order_payments.payment_type": "one of: credit_card, boleto, voucher, debit_card, not_defined. boleto is a Brazilian bank slip paid at an agent; there is no cash-on-delivery. An order may mix types.",
     "order_payments.payment_installments": "number of instalments; 1 means paid in full",
     "order_payments.payment_sequential": "sequence number within an order (1, 2, 3...), not a global id",
     "category_translation.product_category_name_english": (
