@@ -61,7 +61,7 @@ BLOCKED = [
     ("stacked",           "SELECT * FROM orders; DROP TABLE orders;"),
     # A valid SELECT that leaks the schema of every table — passes SELECT-only.
     ("sqlite_master",     "SELECT * FROM sqlite_master"),
-    ("off-allowlist table", "SELECT * FROM customers"),
+    ("off-allowlist table", "SELECT * FROM geolocation"),
     # A write hidden inside a CTE rather than at the root.
     ("write nested in cte",
      "WITH x AS (DELETE FROM orders RETURNING *) SELECT * FROM x"),
@@ -113,7 +113,7 @@ SECURITY = [
 ]
 
 CORRECTABLE = [
-    "SELECT * FROM customers",          # plausible hallucinated table name
+    "SELECT * FROM geolocation",        # real Olist table, deliberately not loaded
     "SELECT FROM WHERE",                # malformed - the model can fix this
     "SELECT * FROM orderz",             # typo
 ]

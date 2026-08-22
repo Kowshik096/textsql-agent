@@ -10,6 +10,7 @@ A small model cannot infer that `price` lives on order_items rather than
 orders, so we spell it out — columns, types, keys, and a sample row each.
 """
 
+import os
 import sqlite3
 from pathlib import Path
 
@@ -22,13 +23,35 @@ import pandas as pd
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 DB_PATH = DATA_DIR / "olist.db"
 
-# Only these four. Fewer tables = shorter prompt = higher accuracy on a 3B model.
-TABLES = {
+# The schema is a variable, not a constant, so Day 4 can measure what each
+# extra table costs in execution accuracy instead of asserting it.
+#
+# Day 1 trimmed to four tables on the reasoning that nine would consume over
+# half the context window. That was true at num_ctx 4096; at 8192 the measured
+# peak including three retries is 1,073 tokens - 13% - so capacity is not the
+# constraint and that argument has been retired. What remains is join-path
+# ambiguity and column collision, and those are testable rather than assumed.
+CORE_TABLES = {
     "orders": "olist_orders_dataset.csv",
     "order_items": "olist_order_items_dataset.csv",
     "products": "olist_products_dataset.csv",
     "sellers": "olist_sellers_dataset.csv",
 }
+
+# Buyer-side geography, and the only route to person-level identity. Adding it
+# also reintroduces three near-identical column pairs (*_state, *_city,
+# *_zip_code_prefix), which is exactly the failure mode Day 1 cited - so the
+# ablation measures a real risk rather than a hypothetical one.
+OPTIONAL_TABLES = {
+    "customers": "olist_customers_dataset.csv",
+}
+
+# Set INCLUDE_CUSTOMERS=0 to run the 4-table configuration.
+INCLUDE_CUSTOMERS = os.environ.get("INCLUDE_CUSTOMERS", "1") != "0"
+
+TABLES = dict(CORE_TABLES)
+if INCLUDE_CUSTOMERS:
+    TABLES.update(OPTIONAL_TABLES)
 
 # SQLite won't know these from a pandas import, so we state them by hand.
 # The model needs join paths more than it needs anything else.
@@ -37,6 +60,8 @@ RELATIONSHIPS = [
     "order_items.product_id -> products.product_id",
     "order_items.seller_id  -> sellers.seller_id",
 ]
+if INCLUDE_CUSTOMERS:
+    RELATIONSHIPS.append("orders.customer_id     -> customers.customer_id")
 
 # Short notes on columns whose meaning isn't obvious from the name.
 COLUMN_NOTES = {
@@ -45,6 +70,18 @@ COLUMN_NOTES = {
     "order_items.order_item_id": "sequence number within an order (1, 2, 3...), not a global id",
     "orders.order_status": "one of: delivered, shipped, canceled, unavailable, invoiced, processing, created, approved. Exclude 'canceled' and 'unavailable' from revenue questions.",
     "products.product_category_name": "category label in Portuguese",
+    # The three collisions introduced by the customers table. Each note names
+    # the other column explicitly, because the failure is silent: picking
+    # seller_state for a buyer question returns a plausible state and a
+    # plausible number, and nothing downstream can tell it was the wrong one.
+    "customers.customer_state": "the BUYER's state. For where a SELLER is based use sellers.seller_state",
+    "sellers.seller_state": "the SELLER's state. For where a BUYER is located use customers.customer_state",
+    "customers.customer_city": "the BUYER's city. Seller city is sellers.seller_city",
+    "customers.customer_unique_id": (
+        "the actual person. customer_id is unique per order (99,441 orders, "
+        "99,441 customer_ids), so repeat-buyer questions must group by "
+        "customer_unique_id, never customer_id"
+    ),
 }
 
 

@@ -38,11 +38,16 @@ from typing import Optional
 import sqlglot
 from sqlglot import exp
 
+import db
+
 DIALECT = "sqlite"
 
-# The four tables the agent is allowed to touch. Anything else — including
-# sqlite_master and any table a future migration adds — is refused.
-ALLOWED_TABLES = {"orders", "order_items", "products", "sellers"}
+# Derived from the loaded schema rather than duplicated, so the guard cannot
+# drift out of sync with the database - including under the Day 4 ablation,
+# where INCLUDE_CUSTOMERS=0 must also make `customers` un-queryable. Anything
+# outside it, including sqlite_master and the four Olist CSVs we chose not to
+# load, is refused.
+ALLOWED_TABLES = set(db.TABLES)
 
 # Cost control, not security: stops one bad GROUP BY from streaming 112k rows
 # into the prompt. Applied by rewriting the query, not by trusting the model.

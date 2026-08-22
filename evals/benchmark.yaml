@@ -397,6 +397,81 @@ functional:
       SELECT order_id, SUM(price) AS order_value
       FROM order_items GROUP BY order_id ORDER BY order_value DESC LIMIT 1
 
+  # --- buyer geography (requires the customers table) -----------------------
+  #
+  # These exist to test table selection under collision. customers and sellers
+  # both carry *_state, *_city and *_zip_code_prefix, and picking the wrong one
+  # produces valid SQL and a plausible number. F46 is the sharpest: it and F21
+  # both return SP first, so the top row looks right either way - only the
+  # figure differs, by 3.5 million.
+
+  - id: F46
+    difficulty: hard
+    question: Which 5 customer states generated the most revenue?
+    reference_sql: >
+      SELECT c.customer_state, SUM(oi.price) AS revenue
+      FROM order_items oi
+      JOIN orders o ON oi.order_id = o.order_id
+      JOIN customers c ON o.customer_id = c.customer_id
+      WHERE o.order_status NOT IN ('canceled','unavailable')
+      GROUP BY c.customer_state ORDER BY revenue DESC LIMIT 5
+    assumption: >
+      Buyer state, not seller state. Answering with sellers.seller_state (F21)
+      gives SP 8,687,740.35 against the correct SP 5,163,867.22, and PR rather
+      than RJ in second place. Both are valid SQL over three-table joins.
+
+  - id: F47
+    difficulty: hard
+    question: Which 5 customer states have the highest average order value?
+    reference_sql: >
+      SELECT c.customer_state,
+             SUM(oi.price) / COUNT(DISTINCT o.order_id) AS avg_order_value
+      FROM order_items oi
+      JOIN orders o ON oi.order_id = o.order_id
+      JOIN customers c ON o.customer_id = c.customer_id
+      WHERE o.order_status NOT IN ('canceled','unavailable')
+      GROUP BY c.customer_state ORDER BY avg_order_value DESC LIMIT 5
+    assumption: >
+      Per order, not per item (policy 4). The answer is PB, not SP - the
+      largest market by volume is not the largest by basket size, so a model
+      that pattern-matches "biggest state" gets it wrong.
+
+  - id: F48
+    difficulty: medium
+    question: Which 5 customer cities placed the most orders?
+    reference_sql: >
+      SELECT c.customer_city, COUNT(DISTINCT o.order_id) AS n
+      FROM orders o JOIN customers c ON o.customer_id = c.customer_id
+      GROUP BY c.customer_city ORDER BY n DESC LIMIT 5
+
+  - id: F49
+    difficulty: hard
+    question: How many customers have placed more than one order?
+    reference_sql: >
+      SELECT COUNT(*) FROM (
+        SELECT customer_unique_id FROM customers
+        GROUP BY customer_unique_id HAVING COUNT(*) > 1
+      )
+    assumption: >
+      Must group by customer_unique_id. Grouping by customer_id returns 0,
+      because customer_id is unique per order - 99,441 orders, 99,441 ids.
+      Zero is a plausible-looking answer to this question and nothing
+      downstream would question it, which is what makes the case worth having.
+
+  - id: F50
+    difficulty: hard
+    question: What share of customers are repeat buyers?
+    reference_sql: >
+      SELECT CAST(COUNT(*) AS REAL) / (SELECT COUNT(DISTINCT customer_unique_id) FROM customers)
+      FROM (
+        SELECT customer_unique_id FROM customers
+        GROUP BY customer_unique_id HAVING COUNT(*) > 1
+      )
+    assumption: >
+      2,997 of 96,096 people, so about 3.1%. Recorded because the thinness of
+      that slice is itself the reason the "average revenue per customer with
+      5+ orders" idea was rejected - only 19 people qualify.
+
 
 # --- not answerable with this schema ----------------------------------------
 #
