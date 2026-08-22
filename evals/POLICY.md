@@ -16,6 +16,28 @@ materially different.
 | 3 | Date basis | `order_purchase_timestamp` | `order_delivered_customer_date` — NULL on cancelled/undelivered, so it silently shrinks every date-filtered result |
 | 4 | "How many orders" | `COUNT(DISTINCT order_id)` | `COUNT(*)` on `order_items` — counts line items, inflating by ~13% |
 | 5 | Scope of the status filter | money questions only | all questions — would make "how many orders were cancelled" return 0 |
+| 6 | Order revenue | `SUM(order_items.price)` | summing across an `order_payments` join — one-to-many, so it fans out |
+| 7 | Tables in scope | 7 (see `db.CORE_TABLES` + `EXTENDED_TABLES`) | including `geolocation` — its join key is not unique |
+
+## Decision 6: the payments fan-out
+
+`order_payments` holds one row per payment, and an order can be paid in up to
+29 parts. Joining orders to it multiplies order rows, so anything summed across
+that join is inflated.
+
+The overstatement is small enough to pass a glance and large enough to be
+wrong: total item revenue is 13,591,643.70, and the same sum through a payments
+join gives 14,209,115.34. Restricted to credit-card orders it is
+10,883,802.26 against 10,974,357.30 — under 1% out. F56 exists to catch it.
+
+## Decision 7: why geolocation is excluded
+
+1,000,163 rows across 19,015 zip prefixes, averaging 53 rows per prefix and
+peaking at 1,146. Joining it multiplies every row and inflates every aggregate
+by roughly 53x. Deduplicating to zip/city/state does not rescue it — 45% of
+prefixes still map to several city spellings ("niteroi" and "niterói" as
+separate rows) — and `customers` and `sellers` already carry city and state
+directly, so the table adds nothing but a third disagreeing source.
 
 Decisions 1 and 2 were settled on Day 1 and are encoded in `COLUMN_NOTES` in
 `src/db.py`, so the model is told about them too. Decisions 3, 4 and 5 were

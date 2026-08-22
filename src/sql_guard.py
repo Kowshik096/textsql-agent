@@ -44,8 +44,8 @@ DIALECT = "sqlite"
 
 # Derived from the loaded schema rather than duplicated, so the guard cannot
 # drift out of sync with the database - including under the Day 4 ablation,
-# where INCLUDE_CUSTOMERS=0 must also make `customers` un-queryable. Anything
-# outside it, including sqlite_master and the four Olist CSVs we chose not to
+# where SCHEMA=core must also make the extended tables un-queryable. Anything
+# outside it, including sqlite_master and any Olist table we chose not to
 # load, is refused.
 ALLOWED_TABLES = set(db.TABLES)
 

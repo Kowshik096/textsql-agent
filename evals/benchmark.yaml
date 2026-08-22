@@ -472,6 +472,69 @@ functional:
       that slice is itself the reason the "average revenue per customer with
       5+ orders" idea was rejected - only 19 people qualify.
 
+  # --- payments and category translation ------------------------------------
+
+  - id: F51
+    difficulty: easy
+    question: Which payment types are used most often?
+    reference_sql: >
+      SELECT payment_type, COUNT(*) AS n FROM order_payments
+      GROUP BY payment_type ORDER BY n DESC
+
+  - id: F52
+    difficulty: easy
+    question: What is the average number of payment instalments?
+    reference_sql: SELECT AVG(payment_installments) FROM order_payments
+
+  - id: F53
+    difficulty: medium
+    question: What is the total value paid by credit card?
+    reference_sql: >
+      SELECT SUM(payment_value) FROM order_payments
+      WHERE payment_type = 'credit_card'
+    assumption: >
+      Payment value, so order_payments alone - no join, no fan-out. This is
+      the one payments question that is safe to answer directly.
+
+  - id: F54
+    difficulty: hard
+    question: Which 5 product categories generated the most revenue, named in English?
+    reference_sql: >
+      SELECT t.product_category_name_english, SUM(oi.price) AS revenue
+      FROM order_items oi
+      JOIN orders o ON oi.order_id = o.order_id
+      JOIN products p ON oi.product_id = p.product_id
+      JOIN category_translation t ON p.product_category_name = t.product_category_name
+      WHERE o.order_status NOT IN ('canceled','unavailable')
+      GROUP BY t.product_category_name_english ORDER BY revenue DESC LIMIT 5
+    assumption: Four-table join; the English name requires category_translation.
+
+  - id: F55
+    difficulty: medium
+    question: How many orders were paid in more than one instalment?
+    reference_sql: >
+      SELECT COUNT(DISTINCT order_id) FROM order_payments
+      WHERE payment_installments > 1
+    assumption: >
+      DISTINCT is required - an order can have several payment rows, so
+      COUNT(*) would count the same order more than once.
+
+  - id: F56
+    difficulty: hard
+    question: What is the total item revenue from orders paid by credit card?
+    reference_sql: >
+      SELECT SUM(oi.price) FROM order_items oi
+      WHERE oi.order_id IN (
+        SELECT order_id FROM order_payments WHERE payment_type = 'credit_card'
+      )
+    assumption: >
+      The fan-out case, and the sharpest one in the set. order_payments is
+      one-to-many with orders (up to 29 rows for a single order), so the
+      obvious phrasing - JOIN order_payments and SUM(oi.price) - counts items
+      once per payment row and returns 10,974,357.30 against the correct
+      10,883,802.26. Under 1% out: too small to look wrong, large enough to be
+      wrong. The subquery keeps the grain at one row per item.
+
 
 # --- not answerable with this schema ----------------------------------------
 #

@@ -2,7 +2,7 @@
 db.py — database setup and schema description.
 
 Two jobs:
-  1. build_database()  : load the 4 Olist CSVs into a local SQLite file
+  1. build_database()  : load the selected Olist CSVs into a local SQLite file
   2. describe_schema() : turn that schema into text the LLM can reason over
 
 The schema description is the single biggest lever on text-to-SQL accuracy.
@@ -23,14 +23,14 @@ import pandas as pd
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 DB_PATH = DATA_DIR / "olist.db"
 
-# The schema is a variable, not a constant, so Day 4 can measure what each
-# extra table costs in execution accuracy instead of asserting it.
+# The schema is a variable, not a constant, so Day 4 can measure what extra
+# tables cost in execution accuracy instead of asserting it.
 #
 # Day 1 trimmed to four tables on the reasoning that nine would consume over
 # half the context window. That was true at num_ctx 4096; at 8192 the measured
-# peak including three retries is 1,073 tokens - 13% - so capacity is not the
-# constraint and that argument has been retired. What remains is join-path
-# ambiguity and column collision, and those are testable rather than assumed.
+# peak including three retries is 13%, so capacity was never the constraint and
+# that argument has been retired. What survives is join-path ambiguity and
+# column collision, and those are testable.
 CORE_TABLES = {
     "orders": "olist_orders_dataset.csv",
     "order_items": "olist_order_items_dataset.csv",
@@ -38,20 +38,31 @@ CORE_TABLES = {
     "sellers": "olist_sellers_dataset.csv",
 }
 
-# Buyer-side geography, and the only route to person-level identity. Adding it
-# also reintroduces three near-identical column pairs (*_state, *_city,
-# *_zip_code_prefix), which is exactly the failure mode Day 1 cited - so the
-# ablation measures a real risk rather than a hypothetical one.
-OPTIONAL_TABLES = {
+# Each of these earns its place:
+#   customers           - buyer geography and the only route to person identity
+#   order_payments      - payment method and instalments, a question class the
+#                         four core tables cannot express at all
+#   category_translation - categories are stored in Portuguese, so without it
+#                         "revenue from health and beauty" is unanswerable
+#
+# geolocation is deliberately excluded. Its join key is not unique - 1,000,163
+# rows across 19,015 zip prefixes, ~53 rows each - so joining it multiplies
+# every row and inflates every aggregate. Deduplicating to zip/city/state does
+# not fix it either: 45% of prefixes still map to several city spellings, and
+# customers and sellers already carry city and state directly.
+EXTENDED_TABLES = {
     "customers": "olist_customers_dataset.csv",
+    "order_payments": "olist_order_payments_dataset.csv",
+    "category_translation": "product_category_name_translation.csv",
 }
 
-# Set INCLUDE_CUSTOMERS=0 to run the 4-table configuration.
-INCLUDE_CUSTOMERS = os.environ.get("INCLUDE_CUSTOMERS", "1") != "0"
+# SCHEMA=core runs the 4-table configuration; anything else runs all 7.
+SCHEMA = os.environ.get("SCHEMA", "full").lower()
 
 TABLES = dict(CORE_TABLES)
-if INCLUDE_CUSTOMERS:
-    TABLES.update(OPTIONAL_TABLES)
+if SCHEMA != "core":
+    TABLES.update(EXTENDED_TABLES)
+
 
 # SQLite won't know these from a pandas import, so we state them by hand.
 # The model needs join paths more than it needs anything else.
@@ -60,8 +71,12 @@ RELATIONSHIPS = [
     "order_items.product_id -> products.product_id",
     "order_items.seller_id  -> sellers.seller_id",
 ]
-if INCLUDE_CUSTOMERS:
-    RELATIONSHIPS.append("orders.customer_id     -> customers.customer_id")
+if SCHEMA != "core":
+    RELATIONSHIPS += [
+        "orders.customer_id     -> customers.customer_id",
+        "order_payments.order_id -> orders.order_id",
+        "products.product_category_name -> category_translation.product_category_name",
+    ]
 
 # Short notes on columns whose meaning isn't obvious from the name.
 COLUMN_NOTES = {
@@ -81,6 +96,23 @@ COLUMN_NOTES = {
         "the actual person. customer_id is unique per order (99,441 orders, "
         "99,441 customer_ids), so repeat-buyer questions must group by "
         "customer_unique_id, never customer_id"
+    ),
+    # order_payments is one-to-many with orders (up to 29 payments on a single
+    # order), so a join fans out and double-counts anything summed across it.
+    # Stated as a prohibition because the failure is silent: the query runs and
+    # returns an inflated but plausible total.
+    "order_payments.payment_value": (
+        "amount of ONE payment. An order can be paid in several parts, so "
+        "joining orders to order_payments multiplies order rows - never SUM "
+        "order revenue across that join. Order revenue is SUM(order_items.price)"
+    ),
+    "order_payments.payment_type": "one of: credit_card, boleto, voucher, debit_card, not_defined",
+    "order_payments.payment_installments": "number of instalments; 1 means paid in full",
+    "order_payments.payment_sequential": "sequence number within an order (1, 2, 3...), not a global id",
+    "category_translation.product_category_name_english": (
+        "English name for the Portuguese products.product_category_name. Join "
+        "on products.product_category_name to answer questions that name a "
+        "category in English"
     ),
 }
 
