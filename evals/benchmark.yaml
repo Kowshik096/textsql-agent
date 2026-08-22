@@ -556,6 +556,51 @@ functional:
       wrong. The subquery keeps the grain at one row per item.
 
 
+  # --- supply-side geography ------------------------------------------------
+  #
+  # The hardest cases in the set. Both require customer_state AND seller_state
+  # to be correct in the same statement, so unlike F46 the model cannot get
+  # them right by favouring one table - it has to distinguish the two.
+
+  - id: F57
+    difficulty: hard
+    question: What share of order items were bought from a seller in the same state as the customer?
+    reference_sql: >
+      SELECT AVG(CASE WHEN c.customer_state = s.seller_state THEN 1.0 ELSE 0 END)
+      FROM order_items oi
+      JOIN orders o ON oi.order_id = o.order_id
+      JOIN customers c ON o.customer_id = c.customer_id
+      JOIN sellers s ON oi.seller_id = s.seller_id
+    assumption: >
+      Per line item, not per order - an order can contain items from sellers in
+      several states, so there is no single answer at order grain. 36.2%.
+
+  - id: F58
+    difficulty: hard
+    question: Which 5 customer states rely most on sellers from other states?
+    reference_sql: >
+      SELECT c.customer_state,
+             COUNT(*) AS items,
+             AVG(CASE WHEN c.customer_state = s.seller_state THEN 1.0 ELSE 0 END) AS local_share
+      FROM order_items oi
+      JOIN orders o ON oi.order_id = o.order_id
+      JOIN customers c ON o.customer_id = c.customer_id
+      JOIN sellers s ON oi.seller_id = s.seller_id
+      GROUP BY c.customer_state
+      HAVING items > 500
+      ORDER BY local_share ASC, items DESC
+      LIMIT 5
+    assumption: >
+      Ranked by the share sourced locally, ascending, so lowest first. The
+      volume floor of 500 items is deliberate: without it, states with a
+      handful of orders dominate the ranking at 0% purely by sample size, and
+      the result stops meaning anything. Ties are broken by volume so the
+      ordering is deterministic and comparable across runs.
+
+      MS and PA place ~1,000 items each and source essentially nothing locally,
+      against SP at 76.3% - the concentration of sellers in one state is the
+      story the data actually tells.
+
 # --- not answerable with this schema ----------------------------------------
 #
 # Recorded so they are not proposed again, and because the reason is a real
