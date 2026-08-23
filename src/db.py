@@ -78,6 +78,26 @@ if SCHEMA != "core":
         "products.product_category_name -> category_translation.product_category_name",
     ]
 
+# Facts about what is ABSENT. Column notes can only describe columns that
+# exist, and the Day 4 baseline showed the expensive errors are the opposite:
+# the model invents a column, writes valid-looking SQL against it, and the
+# query fails or - worse - silently joins the wrong way.
+#
+# Both entries below were derived from actual failures, not guessed:
+#   "which sellers received the most orders" produced
+#       orders o JOIN sellers s ON o.seller_id = s.seller_id
+#   which is wrong three times over - orders has no seller_id, the path runs
+#   through order_items, and the model repeated it on every retry.
+SCHEMA_NOTES = [
+    "Use the fewest tables that answer the question. If every column you need "
+    "is in one table, query that table alone - an unnecessary JOIN silently "
+    "drops rows that do not match and changes the answer.",
+    "orders does not contain seller_id or product_id. IF a question needs both "
+    "orders and sellers, or orders and products, join through order_items.",
+    "products has no product_name or title column. A product is identified by "
+    "product_id; its only descriptive field is product_category_name.",
+]
+
 # Short notes on columns whose meaning isn't obvious from the name.
 COLUMN_NOTES = {
     "order_items.price": "item price in BRL; seller revenue = SUM(price) only, NOT including freight_value",
@@ -204,6 +224,11 @@ def describe_schema(sample_rows: int = 1) -> str:
                     f"{c}={_truncate(v)}" for c, v in zip(col_names, row)
                 )
                 parts.append(f"  sample: {pairs}")
+        parts.append("")
+
+    if SCHEMA_NOTES:
+        parts.append("IMPORTANT")
+        parts.extend(f"  - {n}" for n in SCHEMA_NOTES)
         parts.append("")
 
     parts.append("RELATIONSHIPS (join paths)")

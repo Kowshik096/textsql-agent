@@ -30,6 +30,18 @@ OPTIONS = {
 }
 KEEP_ALIVE = "30m"
 
+# Retries run hotter than the first attempt, and this is the fix for a measured
+# failure rather than a preference. At temperature 0 the model regenerated
+# byte-identical SQL on every retry: twelve retries in the Day 3 baseline, zero
+# recoveries. Moving the error above the schema did not shift it, and neither
+# did a hint naming the column and the tables that actually have it. The
+# distribution is simply too peaked for appended context to change the argmax.
+#
+# The cost is real and bounded: first attempts stay at temperature 0, so the
+# common path is still reproducible and regression gating still works. Only
+# retries vary, and a query that reached a retry was already wrong.
+RETRY_TEMPERATURE = 0.3
+
 # Warn well before the hard limit — truncation is silent, so we want notice.
 CTX_WARN_THRESHOLD = int(OPTIONS["num_ctx"] * 0.8)
 
@@ -67,8 +79,18 @@ class UsageLog:
 usage = UsageLog()
 
 
-def chat(system: str, user: str, model: str = MODEL) -> LLMResponse:
-    """Send one prompt and return the reply plus timing and token counts."""
+def chat(system: str, user: str, model: str = MODEL,
+         temperature: float = None) -> LLMResponse:
+    """
+    Send one prompt and return the reply plus timing and token counts.
+
+    `temperature` overrides the default for this call only. It exists for the
+    retry path: at temperature 0 the model is locked onto its first answer and
+    regenerates it byte-for-byte no matter what the prompt says about the
+    error, so a deterministic retry cannot recover. See RETRY_TEMPERATURE.
+    """
+    options = OPTIONS if temperature is None else {**OPTIONS, "temperature": temperature}
+
     start = time.perf_counter()
     raw = ollama.chat(
         model=model,
@@ -77,7 +99,7 @@ def chat(system: str, user: str, model: str = MODEL) -> LLMResponse:
             {"role": "user", "content": user},
         ],
         keep_alive=KEEP_ALIVE,
-        options=OPTIONS,
+        options=options,
     )
     latency = time.perf_counter() - start
 

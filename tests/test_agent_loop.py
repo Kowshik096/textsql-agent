@@ -43,7 +43,7 @@ def scripted(monkeypatch):
         sent = []
         queue = list(replies)
 
-        def fake_chat(system, user, model=None):
+        def fake_chat(system, user, model=None, temperature=None):
             sent.append(user)
             # The planner consumes a reply too when USE_PLANNER is on; give it
             # something harmless and let the SQL replies through in order.

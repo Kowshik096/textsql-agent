@@ -133,7 +133,11 @@ def generate_and_execute(state: AgentState) -> dict:
         plan=state.get("plan"),
         attempts=attempts,
     )
-    reply = llm.chat(prompts.GENERATOR_SYSTEM, user_prompt)
+    # First attempt deterministic; retries hotter. See llm.RETRY_TEMPERATURE.
+    reply = llm.chat(
+        prompts.GENERATOR_SYSTEM, user_prompt,
+        temperature=llm.RETRY_TEMPERATURE if attempts else None,
+    )
     sql = llm.extract_sql(reply.text)
 
     verdict = sql_guard.check(sql)

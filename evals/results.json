@@ -14,7 +14,7 @@
       "sql": "SELECT COUNT(*) FROM sellers LIMIT 1000",
       "expected_rows": 1,
       "actual_rows": 1,
-      "elapsed_s": 9.5,
+      "elapsed_s": 17.7,
       "calls": 3
     },
     {
@@ -31,7 +31,7 @@
       "sql": "SELECT COUNT(*) FROM products LIMIT 1000",
       "expected_rows": 1,
       "actual_rows": 1,
-      "elapsed_s": 9.8,
+      "elapsed_s": 11.1,
       "calls": 3
     },
     {
@@ -45,10 +45,10 @@
       "grounded": true,
       "false_positive": false,
       "blocked_layer": null,
-      "sql": "SELECT COUNT(*) FROM orders LIMIT 1000",
+      "sql": "SELECT COUNT(order_id) FROM orders LIMIT 1000",
       "expected_rows": 1,
       "actual_rows": 1,
-      "elapsed_s": 23.3,
+      "elapsed_s": 12.3,
       "calls": 3
     },
     {
@@ -65,7 +65,7 @@
       "sql": "SELECT COUNT(order_id) FROM orders WHERE order_status = 'delivered' LIMIT 1000",
       "expected_rows": 1,
       "actual_rows": 1,
-      "elapsed_s": 11.6,
+      "elapsed_s": 10.1,
       "calls": 3
     },
     {
@@ -82,7 +82,7 @@
       "sql": "SELECT COUNT(*) FROM orders WHERE order_status = 'canceled' LIMIT 1000",
       "expected_rows": 1,
       "actual_rows": 1,
-      "elapsed_s": 11.0,
+      "elapsed_s": 11.5,
       "calls": 3
     },
     {
@@ -99,7 +99,7 @@
       "sql": "SELECT COUNT(DISTINCT product_category_name) FROM products LIMIT 1000",
       "expected_rows": 1,
       "actual_rows": 1,
-      "elapsed_s": 10.1,
+      "elapsed_s": 10.6,
       "calls": 3
     },
     {
@@ -116,24 +116,24 @@
       "sql": "SELECT ct.product_category_name_english, COUNT(*) AS product_count FROM products AS p JOIN category_translation AS ct ON p.product_category_name = ct.product_category_name GROUP BY ct.product_category_name_english ORDER BY product_count DESC LIMIT 5",
       "expected_rows": 5,
       "actual_rows": 5,
-      "elapsed_s": 28.8,
+      "elapsed_s": 28.0,
       "calls": 3
     },
     {
       "id": "F08",
       "difficulty": "easy",
       "question": "What is the average product weight in grams?",
-      "correct": true,
-      "first_pass": true,
+      "correct": false,
+      "first_pass": false,
       "status": "ok",
       "attempts": 1,
       "grounded": true,
       "false_positive": false,
       "blocked_layer": null,
-      "sql": "SELECT AVG(product_weight_g) FROM products LIMIT 1000",
+      "sql": "SELECT AVG(product_weight_g) AS average_product_weight FROM products JOIN category_translation ON products.product_category_name = category_translation.product_category_name WHERE category_translation.product_category_name_english = 'health_beauty' LIMIT 1000",
       "expected_rows": 1,
       "actual_rows": 1,
-      "elapsed_s": 11.6,
+      "elapsed_s": 20.3,
       "calls": 3
     },
     {
@@ -150,7 +150,7 @@
       "sql": "SELECT seller_state, COUNT(*) AS seller_count FROM sellers GROUP BY seller_state ORDER BY seller_count DESC LIMIT 5",
       "expected_rows": 5,
       "actual_rows": 5,
-      "elapsed_s": 19.4,
+      "elapsed_s": 19.5,
       "calls": 3
     },
     {
@@ -167,24 +167,24 @@
       "sql": "SELECT COUNT(*) FROM orders WHERE STRFTIME('%Y', order_purchase_timestamp) = '2017' LIMIT 1000",
       "expected_rows": 1,
       "actual_rows": 1,
-      "elapsed_s": 14.4,
+      "elapsed_s": 16.3,
       "calls": 3
     },
     {
       "id": "F11",
       "difficulty": "easy",
       "question": "What is the highest price paid for a single item?",
-      "correct": false,
-      "first_pass": false,
+      "correct": true,
+      "first_pass": true,
       "status": "ok",
       "attempts": 1,
       "grounded": true,
       "false_positive": false,
       "blocked_layer": null,
-      "sql": "SELECT SUM(payment_value) AS highest_price_paid FROM order_items JOIN order_payments ON order_items.order_id = order_payments.order_id WHERE payment_type = 'credit_card' GROUP BY order_item_id ORDER BY highest_price_paid DESC LIMIT 1",
+      "sql": "SELECT MAX(price) AS highest_price_paid FROM order_items JOIN orders ON order_items.order_id = orders.order_id WHERE orders.order_status IN ('delivered', 'invoiced', 'processing', 'created', 'approved') AND NOT orders.order_approved_at IS NULL AND NOT orders.order_delivered_carrier_date IS NULL AND NOT orders.order_delivered_customer_date IS NULL ORDER BY price DESC LIMIT 1",
       "expected_rows": 1,
       "actual_rows": 1,
-      "elapsed_s": 31.4,
+      "elapsed_s": 39.9,
       "calls": 3
     },
     {
@@ -198,10 +198,10 @@
       "grounded": true,
       "false_positive": false,
       "blocked_layer": null,
-      "sql": "SELECT COUNT(*) FROM order_items LIMIT 1000",
+      "sql": "SELECT COUNT(order_item_id) FROM order_items LIMIT 1000",
       "expected_rows": 1,
       "actual_rows": 1,
-      "elapsed_s": 14.5,
+      "elapsed_s": 30.3,
       "calls": 3
     },
     {
@@ -218,7 +218,7 @@
       "sql": "SELECT s.seller_id, SUM(oi.price) AS total_revenue FROM orders AS o JOIN order_items AS oi ON o.order_id = oi.order_id JOIN sellers AS s ON oi.seller_id = s.seller_id WHERE NOT o.order_status IN ('canceled', 'unavailable') GROUP BY s.seller_id ORDER BY total_revenue DESC LIMIT 5",
       "expected_rows": 5,
       "actual_rows": 5,
-      "elapsed_s": 58.0,
+      "elapsed_s": 80.5,
       "calls": 3
     },
     {
@@ -232,28 +232,28 @@
       "grounded": true,
       "false_positive": false,
       "blocked_layer": null,
-      "sql": "SELECT pt.product_category_name_english AS category_name, SUM(oi.price) AS total_revenue FROM order_items AS oi JOIN products AS p ON oi.product_id = p.product_id JOIN category_translation AS pt ON p.product_category_name = pt.product_category_name JOIN orders AS o ON oi.order_id = o.order_id WHERE NOT o.order_status IN ('canceled', 'unavailable') GROUP BY pt.product_category_name_english ORDER BY total_revenue DESC LIMIT 5",
+      "sql": "SELECT pt.product_category_name_english AS product_category, SUM(oi.price) AS total_revenue FROM orders AS o JOIN order_items AS oi ON o.order_id = oi.order_id JOIN products AS p ON oi.product_id = p.product_id JOIN category_translation AS pt ON p.product_category_name = pt.product_category_name WHERE NOT o.order_status IN ('canceled', 'unavailable') GROUP BY pt.product_category_name_english ORDER BY total_revenue DESC LIMIT 5",
       "expected_rows": 5,
       "actual_rows": 5,
-      "elapsed_s": 45.1,
+      "elapsed_s": 61.2,
       "calls": 3
     },
     {
       "id": "F15",
       "difficulty": "medium",
       "question": "What is the average freight value per item?",
-      "correct": true,
-      "first_pass": true,
-      "status": "ok",
-      "attempts": 1,
+      "correct": false,
+      "first_pass": false,
+      "status": "failed",
+      "attempts": 3,
       "grounded": true,
       "false_positive": false,
       "blocked_layer": null,
-      "sql": "SELECT AVG(freight_value) AS average_freight_value FROM order_items LIMIT 1000",
+      "sql": null,
       "expected_rows": 1,
-      "actual_rows": 1,
-      "elapsed_s": 20.2,
-      "calls": 3
+      "actual_rows": 0,
+      "elapsed_s": 46.7,
+      "calls": 4
     },
     {
       "id": "F16",
@@ -269,7 +269,7 @@
       "sql": "SELECT s.seller_id, COUNT(DISTINCT oi.product_id) AS distinct_product_count FROM sellers AS s JOIN order_items AS oi ON s.seller_id = oi.seller_id GROUP BY s.seller_id ORDER BY distinct_product_count DESC LIMIT 5",
       "expected_rows": 5,
       "actual_rows": 5,
-      "elapsed_s": 56.2,
+      "elapsed_s": 54.7,
       "calls": 3
     },
     {
@@ -286,24 +286,24 @@
       "sql": "SELECT order_status, COUNT(*) AS order_count FROM orders WHERE NOT order_status IN ('canceled', 'unavailable') GROUP BY order_status LIMIT 10",
       "expected_rows": 8,
       "actual_rows": 6,
-      "elapsed_s": 27.4,
+      "elapsed_s": 32.0,
       "calls": 3
     },
     {
       "id": "F18",
       "difficulty": "medium",
       "question": "What was the total revenue in 2017?",
-      "correct": true,
-      "first_pass": true,
+      "correct": false,
+      "first_pass": false,
       "status": "ok",
       "attempts": 1,
       "grounded": true,
       "false_positive": false,
       "blocked_layer": null,
-      "sql": "SELECT SUM(order_items.price) AS total_revenue FROM orders JOIN order_items ON orders.order_id = order_items.order_id WHERE STRFTIME('%Y', orders.order_purchase_timestamp) = '2017' AND NOT order_status IN ('canceled', 'unavailable') LIMIT 1000",
+      "sql": "SELECT SUM(T2.price) AS total_revenue FROM orders AS T1 JOIN order_items AS T2 ON T1.order_id = T2.order_id WHERE STRFTIME('%Y', T1.order_approved_at) = '2017' LIMIT 1000",
       "expected_rows": 1,
       "actual_rows": 1,
-      "elapsed_s": 32.4,
+      "elapsed_s": 63.6,
       "calls": 3
     },
     {
@@ -320,7 +320,7 @@
       "sql": null,
       "expected_rows": 5,
       "actual_rows": 0,
-      "elapsed_s": 54.4,
+      "elapsed_s": 65.0,
       "calls": 4
     },
     {
@@ -334,10 +334,10 @@
       "grounded": true,
       "false_positive": false,
       "blocked_layer": null,
-      "sql": "SELECT AVG(T2.order_item_id) AS average_items_per_order FROM orders AS T1 JOIN order_items AS T2 ON T1.order_id = T2.order_id LIMIT 1000",
+      "sql": "SELECT COUNT(order_id) / COUNT(DISTINCT order_id) AS average_items_per_order FROM order_items LIMIT 1000",
       "expected_rows": 1,
       "actual_rows": 1,
-      "elapsed_s": 25.9,
+      "elapsed_s": 19.1,
       "calls": 3
     },
     {
@@ -351,10 +351,10 @@
       "grounded": true,
       "false_positive": false,
       "blocked_layer": null,
-      "sql": "SELECT s.seller_state, SUM(oi.price) AS total_revenue FROM orders AS o JOIN order_items AS oi ON o.order_id = oi.order_id JOIN products AS p ON oi.product_id = p.product_id JOIN sellers AS s ON oi.seller_id = s.seller_id WHERE NOT o.order_status IN ('canceled', 'unavailable') GROUP BY s.seller_state ORDER BY total_revenue DESC LIMIT 5",
+      "sql": "SELECT s.seller_state, SUM(oi.price) AS total_revenue FROM orders AS o JOIN order_items AS oi ON o.order_id = oi.order_id JOIN sellers AS s ON oi.seller_id = s.seller_id WHERE NOT o.order_status IN ('canceled', 'unavailable') GROUP BY s.seller_state ORDER BY total_revenue DESC LIMIT 5",
       "expected_rows": 5,
       "actual_rows": 5,
-      "elapsed_s": 46.9,
+      "elapsed_s": 40.6,
       "calls": 3
     },
     {
@@ -364,15 +364,15 @@
       "correct": false,
       "first_pass": false,
       "status": "ok",
-      "attempts": 2,
+      "attempts": 3,
       "grounded": true,
       "false_positive": false,
       "blocked_layer": null,
       "sql": "SELECT COUNT(T1.order_id) AS order_count FROM orders AS T1 JOIN order_items AS T2 ON T1.order_id = T2.order_id GROUP BY T1.order_id HAVING COUNT(T2.order_item_id) > 1 LIMIT 1000",
       "expected_rows": 1,
       "actual_rows": 1000,
-      "elapsed_s": 41.9,
-      "calls": 4
+      "elapsed_s": 51.0,
+      "calls": 5
     },
     {
       "id": "F23",
@@ -380,16 +380,16 @@
       "question": "Which 5 sellers received the most orders?",
       "correct": false,
       "first_pass": false,
-      "status": "failed",
-      "attempts": 3,
+      "status": "ok",
+      "attempts": 1,
       "grounded": true,
       "false_positive": false,
       "blocked_layer": null,
-      "sql": null,
+      "sql": "SELECT s.seller_id, COUNT(*) AS order_count FROM orders AS o JOIN order_items AS oi ON o.order_id = oi.order_id JOIN sellers AS s ON oi.seller_id = s.seller_id GROUP BY s.seller_id ORDER BY order_count DESC LIMIT 5",
       "expected_rows": 5,
-      "actual_rows": 0,
-      "elapsed_s": 49.6,
-      "calls": 4
+      "actual_rows": 5,
+      "elapsed_s": 59.7,
+      "calls": 3
     },
     {
       "id": "F24",
@@ -405,7 +405,7 @@
       "sql": "SELECT SUM(freight_value) AS total_freight_cost FROM order_items LIMIT 1000",
       "expected_rows": 1,
       "actual_rows": 1,
-      "elapsed_s": 14.0,
+      "elapsed_s": 16.6,
       "calls": 3
     },
     {
@@ -419,27 +419,27 @@
       "grounded": true,
       "false_positive": false,
       "blocked_layer": null,
-      "sql": "SELECT pt.product_category_name_english AS category_name, AVG(oi.price) AS average_item_price FROM products AS p JOIN order_items AS oi ON p.product_id = oi.product_id JOIN category_translation AS pt ON p.product_category_name = pt.product_category_name GROUP BY pt.product_category_name_english ORDER BY average_item_price DESC LIMIT 5",
+      "sql": "SELECT p.product_category_name, AVG(oi.price) AS average_item_price FROM order_items AS oi JOIN products AS p ON oi.product_id = p.product_id JOIN orders AS o ON oi.order_id = o.order_id WHERE o.order_status IN ('delivered', 'shipped', 'invoiced', 'processing', 'created') GROUP BY p.product_category_name ORDER BY average_item_price DESC LIMIT 5",
       "expected_rows": 5,
       "actual_rows": 5,
-      "elapsed_s": 39.9,
+      "elapsed_s": 47.6,
       "calls": 3
     },
     {
       "id": "F26",
       "difficulty": "medium",
       "question": "How many orders were placed in each year?",
-      "correct": false,
-      "first_pass": false,
+      "correct": true,
+      "first_pass": true,
       "status": "ok",
       "attempts": 1,
       "grounded": true,
       "false_positive": false,
       "blocked_layer": null,
-      "sql": "SELECT STRFTIME('%Y', order_purchase_timestamp) AS year, COUNT(*) AS order_count FROM orders WHERE NOT order_status IN ('canceled', 'unavailable') GROUP BY year ORDER BY year LIMIT 1000",
+      "sql": "SELECT STRFTIME('%Y', order_purchase_timestamp) AS year, COUNT(*) AS order_count FROM orders GROUP BY year ORDER BY year LIMIT 1000",
       "expected_rows": 3,
       "actual_rows": 3,
-      "elapsed_s": 21.6,
+      "elapsed_s": 16.4,
       "calls": 3
     },
     {
@@ -456,7 +456,7 @@
       "sql": "SELECT STRFTIME('%Y-%m', order_purchase_timestamp) AS month, COUNT(*) AS order_count FROM orders WHERE STRFTIME('%Y', order_purchase_timestamp) = '2017' GROUP BY month ORDER BY order_count DESC LIMIT 1",
       "expected_rows": 1,
       "actual_rows": 1,
-      "elapsed_s": 26.9,
+      "elapsed_s": 29.5,
       "calls": 3
     },
     {
@@ -473,7 +473,7 @@
       "sql": "SELECT AVG(price) AS average_item_price FROM order_items LIMIT 1000",
       "expected_rows": 1,
       "actual_rows": 1,
-      "elapsed_s": 26.7,
+      "elapsed_s": 27.7,
       "calls": 3
     },
     {
@@ -481,17 +481,17 @@
       "difficulty": "hard",
       "question": "Which 5 sellers have the highest average item price?",
       "correct": true,
-      "first_pass": true,
+      "first_pass": false,
       "status": "ok",
-      "attempts": 1,
+      "attempts": 2,
       "grounded": true,
       "false_positive": false,
       "blocked_layer": null,
-      "sql": "SELECT s.seller_id, AVG(oi.price) AS average_item_price FROM order_items AS oi JOIN sellers AS s ON oi.seller_id = s.seller_id JOIN orders AS o ON oi.order_id = o.order_id WHERE o.order_status IN ('delivered', 'shipped', 'invoiced', 'processing', 'created') GROUP BY s.seller_id ORDER BY average_item_price DESC LIMIT 5",
+      "sql": "SELECT s.seller_id, AVG(oi.price) AS average_item_price FROM order_items AS oi JOIN products AS p ON oi.product_id = p.product_id JOIN sellers AS s ON oi.seller_id = s.seller_id JOIN orders AS o ON oi.order_id = o.order_id WHERE NOT o.order_status IN ('canceled', 'unavailable') GROUP BY s.seller_id ORDER BY average_item_price DESC LIMIT 5",
       "expected_rows": 5,
       "actual_rows": 5,
-      "elapsed_s": 79.4,
-      "calls": 3
+      "elapsed_s": 77.1,
+      "calls": 4
     },
     {
       "id": "F30",
@@ -507,7 +507,7 @@
       "sql": "SELECT STRFTIME('%Y', order_approved_at) AS year, SUM(price) AS total_revenue FROM orders JOIN order_items ON orders.order_id = order_items.order_id WHERE NOT order_status IN ('canceled', 'unavailable') GROUP BY year ORDER BY year LIMIT 1000",
       "expected_rows": 3,
       "actual_rows": 4,
-      "elapsed_s": 37.9,
+      "elapsed_s": 40.4,
       "calls": 3
     },
     {
@@ -524,7 +524,7 @@
       "sql": "SELECT COUNT(DISTINCT seller_id) AS seller_count FROM order_items JOIN products ON order_items.product_id = products.product_id GROUP BY seller_id, product_category_name HAVING COUNT(DISTINCT product_category_name) > 3 LIMIT 1000",
       "expected_rows": 1,
       "actual_rows": 0,
-      "elapsed_s": 30.5,
+      "elapsed_s": 34.7,
       "calls": 3
     },
     {
@@ -538,10 +538,10 @@
       "grounded": true,
       "false_positive": false,
       "blocked_layer": null,
-      "sql": "SELECT p.product_category_name, SUM(oi.price) AS total_revenue, SUM(oi.freight_value) AS total_freight_cost, (SUM(oi.freight_value) / SUM(oi.price)) AS freight_cost_share_of_revenue FROM order_items AS oi JOIN products AS p ON oi.product_id = p.product_id GROUP BY p.product_category_name ORDER BY freight_cost_share_of_revenue DESC LIMIT 5",
+      "sql": "SELECT p.product_category_name, SUM(oi.price) AS total_revenue, SUM(oi.freight_value) AS total_freight_cost, (SUM(oi.freight_value) * 100.0 / SUM(oi.price)) AS freight_cost_share FROM order_items AS oi JOIN products AS p ON oi.product_id = p.product_id GROUP BY p.product_category_name ORDER BY freight_cost_share DESC LIMIT 5",
       "expected_rows": 5,
       "actual_rows": 5,
-      "elapsed_s": 50.0,
+      "elapsed_s": 57.6,
       "calls": 3
     },
     {
@@ -555,10 +555,10 @@
       "grounded": true,
       "false_positive": false,
       "blocked_layer": null,
-      "sql": "SELECT p.product_category_name, COUNT(DISTINCT s.seller_id) AS seller_count FROM products AS p JOIN order_items AS oi ON p.product_id = oi.product_id JOIN sellers AS s ON oi.seller_id = s.seller_id GROUP BY p.product_category_name ORDER BY seller_count DESC LIMIT 5",
+      "sql": "SELECT p.product_category_name, COUNT(DISTINCT oi.seller_id) AS seller_count FROM order_items AS oi JOIN products AS p ON oi.product_id = p.product_id GROUP BY p.product_category_name ORDER BY seller_count DESC LIMIT 5",
       "expected_rows": 5,
       "actual_rows": 5,
-      "elapsed_s": 33.2,
+      "elapsed_s": 38.4,
       "calls": 3
     },
     {
@@ -568,15 +568,15 @@
       "correct": false,
       "first_pass": false,
       "status": "ok",
-      "attempts": 2,
+      "attempts": 1,
       "grounded": true,
       "false_positive": false,
       "blocked_layer": null,
-      "sql": "SELECT s.seller_id, AVG(oi.price) AS average_revenue_per_seller FROM orders AS o JOIN order_items AS oi ON o.order_id = oi.order_id JOIN products AS p ON oi.product_id = p.product_id JOIN category_translation AS ct ON p.product_category_name = ct.product_category_name JOIN sellers AS s ON o.customer_id = s.seller_id WHERE NOT o.order_status IN ('canceled', 'unavailable') GROUP BY s.seller_id ORDER BY average_revenue_per_seller DESC LIMIT 10",
+      "sql": "SELECT s.seller_id, AVG(oi.price) AS average_revenue FROM order_items AS oi JOIN products AS p ON oi.product_id = p.product_id JOIN sellers AS s ON oi.seller_id = s.seller_id JOIN orders AS o ON oi.order_id = o.order_id WHERE NOT o.order_status IN ('canceled', 'unavailable') GROUP BY s.seller_id ORDER BY average_revenue DESC LIMIT 10",
       "expected_rows": 1,
-      "actual_rows": 0,
-      "elapsed_s": 67.4,
-      "calls": 4
+      "actual_rows": 10,
+      "elapsed_s": 51.6,
+      "calls": 3
     },
     {
       "id": "F35",
@@ -589,27 +589,27 @@
       "grounded": true,
       "false_positive": false,
       "blocked_layer": null,
-      "sql": "SELECT COUNT(*) FROM orders JOIN order_items ON orders.order_id = order_items.order_id WHERE orders.order_status = 'delivered' AND orders.order_delivered_carrier_date > orders.order_estimated_delivery_date LIMIT 1000",
+      "sql": "SELECT COUNT(T1.order_id) FROM orders AS T1 JOIN orders AS T2 ON T1.order_id = T2.order_id WHERE T1.order_status = 'delivered' AND T1.order_delivered_carrier_date > T2.order_estimated_delivery_date LIMIT 1000",
       "expected_rows": 1,
       "actual_rows": 1,
-      "elapsed_s": 21.2,
+      "elapsed_s": 33.4,
       "calls": 3
     },
     {
       "id": "F36",
       "difficulty": "hard",
       "question": "Which 5 sellers generated the most revenue in 2018?",
-      "correct": false,
-      "first_pass": false,
+      "correct": true,
+      "first_pass": true,
       "status": "ok",
       "attempts": 1,
       "grounded": true,
       "false_positive": false,
       "blocked_layer": null,
-      "sql": "SELECT s.seller_id, SUM(oi.price) AS total_revenue FROM orders AS o JOIN order_items AS oi ON o.order_id = oi.order_id JOIN sellers AS s ON oi.seller_id = s.seller_id WHERE STRFTIME('%Y', o.order_purchase_timestamp) = '2018' GROUP BY s.seller_id ORDER BY total_revenue DESC LIMIT 5",
+      "sql": "SELECT s.seller_id, SUM(oi.price) AS total_revenue FROM orders AS o JOIN order_items AS oi ON o.order_id = oi.order_id JOIN sellers AS s ON oi.seller_id = s.seller_id WHERE o.order_purchase_timestamp >= '2018-01-01' AND o.order_purchase_timestamp < '2019-01-01' AND NOT o.order_status IN ('canceled', 'unavailable') GROUP BY s.seller_id ORDER BY total_revenue DESC LIMIT 5",
       "expected_rows": 5,
       "actual_rows": 5,
-      "elapsed_s": 48.3,
+      "elapsed_s": 67.0,
       "calls": 3
     },
     {
@@ -626,42 +626,42 @@
       "sql": "SELECT CAST(COUNT(CASE WHEN order_status = 'canceled' THEN 1 ELSE NULL END) AS REAL) * 100 / COUNT(*) AS canceled_order_share FROM orders LIMIT 1000",
       "expected_rows": 1,
       "actual_rows": 1,
-      "elapsed_s": 20.6,
+      "elapsed_s": 38.1,
       "calls": 3
     },
     {
       "id": "F38",
       "difficulty": "hard",
       "question": "Which 5 sellers have the highest average freight cost per item?",
-      "correct": false,
-      "first_pass": false,
-      "status": "failed",
-      "attempts": 3,
+      "correct": true,
+      "first_pass": true,
+      "status": "ok",
+      "attempts": 1,
       "grounded": true,
       "false_positive": false,
       "blocked_layer": null,
-      "sql": null,
+      "sql": "SELECT s.seller_id, AVG(oi.freight_value) AS avg_freight_cost FROM order_items AS oi JOIN sellers AS s ON oi.seller_id = s.seller_id JOIN orders AS o ON oi.order_id = o.order_id WHERE o.order_status IN ('delivered', 'shipped', 'invoiced', 'processing', 'created') GROUP BY s.seller_id ORDER BY avg_freight_cost DESC LIMIT 5",
       "expected_rows": 5,
-      "actual_rows": 0,
-      "elapsed_s": 46.6,
-      "calls": 4
+      "actual_rows": 5,
+      "elapsed_s": 76.5,
+      "calls": 3
     },
     {
       "id": "F39",
       "difficulty": "hard",
       "question": "How many sellers generated more revenue than the average seller?",
-      "correct": false,
-      "first_pass": false,
-      "status": "failed",
-      "attempts": 3,
+      "correct": true,
+      "first_pass": true,
+      "status": "ok",
+      "attempts": 1,
       "grounded": true,
       "false_positive": false,
       "blocked_layer": null,
-      "sql": null,
+      "sql": "SELECT COUNT(seller_id) AS seller_count FROM (SELECT seller_id, SUM(price) AS total_revenue FROM order_items GROUP BY seller_id) AS seller_revenues WHERE total_revenue > (SELECT AVG(total_revenue) FROM (SELECT SUM(price) AS total_revenue FROM order_items GROUP BY seller_id) AS seller_revenues) LIMIT 1000",
       "expected_rows": 1,
-      "actual_rows": 0,
-      "elapsed_s": 86.6,
-      "calls": 4
+      "actual_rows": 1,
+      "elapsed_s": 37.5,
+      "calls": 3
     },
     {
       "id": "F40",
@@ -674,10 +674,10 @@
       "grounded": true,
       "false_positive": false,
       "blocked_layer": null,
-      "sql": "SELECT ct.product_category_name_english AS category_name, AVG(p.product_weight_g) AS average_weight FROM products AS p JOIN category_translation AS ct ON p.product_category_name = ct.product_category_name GROUP BY ct.product_category_name_english ORDER BY average_weight DESC LIMIT 5",
+      "sql": "SELECT ct.product_category_name_english, AVG(p.product_weight_g) AS average_weight FROM products AS p JOIN category_translation AS ct ON p.product_category_name = ct.product_category_name WHERE NOT ct.product_category_name IN ('canceled', 'unavailable') GROUP BY ct.product_category_name_english ORDER BY average_weight DESC LIMIT 5",
       "expected_rows": 5,
       "actual_rows": 5,
-      "elapsed_s": 32.2,
+      "elapsed_s": 42.1,
       "calls": 3
     },
     {
@@ -694,7 +694,7 @@
       "sql": "SELECT COUNT(order_id) FROM orders WHERE order_status <> 'delivered' LIMIT 1000",
       "expected_rows": 1,
       "actual_rows": 1,
-      "elapsed_s": 11.0,
+      "elapsed_s": 19.4,
       "calls": 3
     },
     {
@@ -711,7 +711,7 @@
       "sql": "SELECT AVG(CAST((JULIANDAY(order_delivered_carrier_date) - JULIANDAY(order_purchase_timestamp)) AS INTEGER)) AS average_delivery_time FROM orders WHERE NOT order_status IN ('canceled', 'unavailable') LIMIT 1000",
       "expected_rows": 1,
       "actual_rows": 1,
-      "elapsed_s": 21.7,
+      "elapsed_s": 28.1,
       "calls": 3
     },
     {
@@ -725,10 +725,10 @@
       "grounded": true,
       "false_positive": false,
       "blocked_layer": null,
-      "sql": "SELECT AVG((STRFTIME('%s', order_approved_at) - STRFTIME('%s', order_purchase_timestamp)) / 3600) AS average_time_hours FROM orders JOIN order_payments ON orders.order_id = order_payments.order_id WHERE order_status = 'approved' LIMIT 1000",
+      "sql": "SELECT AVG((STRFTIME('%s', order_approved_at) - STRFTIME('%s', order_purchase_timestamp)) / 3600) AS average_time_hours FROM orders JOIN order_payments ON orders.order_id = order_payments.order_id WHERE order_payments.payment_type = 'credit_card' OR order_payments.payment_type = 'debit_card' OR order_payments.payment_type = 'voucher' LIMIT 1000",
       "expected_rows": 1,
       "actual_rows": 1,
-      "elapsed_s": 26.0,
+      "elapsed_s": 37.4,
       "calls": 3
     },
     {
@@ -745,24 +745,24 @@
       "sql": "SELECT AVG(T2.price) AS average_revenue_per_order FROM orders AS T1 JOIN order_items AS T2 ON T1.order_id = T2.order_id WHERE NOT T1.order_status IN ('canceled', 'unavailable') LIMIT 1000",
       "expected_rows": 1,
       "actual_rows": 1,
-      "elapsed_s": 39.3,
+      "elapsed_s": 47.3,
       "calls": 3
     },
     {
       "id": "F45",
       "difficulty": "medium",
       "question": "Which single order had the highest total value?",
-      "correct": false,
-      "first_pass": false,
+      "correct": true,
+      "first_pass": true,
       "status": "ok",
       "attempts": 1,
       "grounded": true,
       "false_positive": false,
       "blocked_layer": null,
-      "sql": "SELECT o.order_id, SUM(oi.price + oi.freight_value) AS total_revenue FROM orders AS o JOIN order_items AS oi ON o.order_id = oi.order_id WHERE NOT o.order_status IN ('canceled', 'unavailable') GROUP BY o.order_id ORDER BY total_revenue DESC LIMIT 1",
+      "sql": "SELECT o.order_id, SUM(oi.price) AS total_revenue FROM orders AS o JOIN order_items AS oi ON o.order_id = oi.order_id JOIN products AS p ON oi.product_id = p.product_id WHERE NOT o.order_status IN ('canceled', 'unavailable') GROUP BY o.order_id ORDER BY total_revenue DESC LIMIT 1",
       "expected_rows": 1,
       "actual_rows": 1,
-      "elapsed_s": 35.6,
+      "elapsed_s": 44.4,
       "calls": 3
     },
     {
@@ -776,10 +776,10 @@
       "grounded": true,
       "false_positive": false,
       "blocked_layer": null,
-      "sql": "SELECT c.customer_state, SUM(oi.price) AS total_revenue FROM orders AS o JOIN customers AS c ON o.customer_id = c.customer_id JOIN order_items AS oi ON o.order_id = oi.order_id WHERE NOT o.order_status IN ('canceled', 'unavailable') GROUP BY c.customer_state ORDER BY total_revenue DESC LIMIT 5",
+      "sql": "SELECT c.customer_state, SUM(oi.price) AS total_revenue FROM orders AS o JOIN order_items AS oi ON o.order_id = oi.order_id JOIN products AS p ON oi.product_id = p.product_id JOIN customers AS c ON o.customer_id = c.customer_id WHERE NOT o.order_status IN ('canceled', 'unavailable') GROUP BY c.customer_state ORDER BY total_revenue DESC LIMIT 5",
       "expected_rows": 5,
       "actual_rows": 5,
-      "elapsed_s": 42.5,
+      "elapsed_s": 52.5,
       "calls": 3
     },
     {
@@ -788,32 +788,32 @@
       "question": "Which 5 customer states have the highest average order value?",
       "correct": false,
       "first_pass": false,
-      "status": "failed",
-      "attempts": 3,
-      "grounded": true,
-      "false_positive": false,
-      "blocked_layer": null,
-      "sql": null,
-      "expected_rows": 5,
-      "actual_rows": 0,
-      "elapsed_s": 53.0,
-      "calls": 4
-    },
-    {
-      "id": "F48",
-      "difficulty": "medium",
-      "question": "Which 5 customer cities placed the most orders?",
-      "correct": false,
-      "first_pass": false,
       "status": "ok",
       "attempts": 1,
       "grounded": true,
       "false_positive": false,
       "blocked_layer": null,
-      "sql": "SELECT c.customer_city, COUNT(o.order_id) AS order_count FROM orders AS o JOIN customers AS c ON o.customer_id = c.customer_id WHERE o.order_status IN ('delivered', 'shipped', 'invoiced', 'processing', 'created', 'approved') GROUP BY c.customer_city ORDER BY order_count DESC LIMIT 5",
+      "sql": "SELECT c.customer_state, AVG(oi.price) AS average_order_value FROM orders AS o JOIN order_items AS oi ON o.order_id = oi.order_id JOIN customers AS c ON o.customer_id = c.customer_id WHERE o.order_status IN ('delivered', 'shipped', 'invoiced', 'processing', 'created') GROUP BY c.customer_state ORDER BY average_order_value DESC LIMIT 5",
       "expected_rows": 5,
       "actual_rows": 5,
-      "elapsed_s": 30.9,
+      "elapsed_s": 46.3,
+      "calls": 3
+    },
+    {
+      "id": "F48",
+      "difficulty": "medium",
+      "question": "Which 5 customer cities placed the most orders?",
+      "correct": true,
+      "first_pass": true,
+      "status": "ok",
+      "attempts": 1,
+      "grounded": true,
+      "false_positive": false,
+      "blocked_layer": null,
+      "sql": "SELECT c.customer_city, COUNT(o.order_id) AS order_count FROM orders AS o JOIN customers AS c ON o.customer_id = c.customer_id GROUP BY c.customer_city ORDER BY order_count DESC LIMIT 5",
+      "expected_rows": 5,
+      "actual_rows": 5,
+      "elapsed_s": 29.5,
       "calls": 3
     },
     {
@@ -830,7 +830,7 @@
       "sql": "SELECT COUNT(DISTINCT customer_id) AS num_customers FROM orders GROUP BY customer_id HAVING COUNT(order_id) > 1 LIMIT 1000",
       "expected_rows": 1,
       "actual_rows": 0,
-      "elapsed_s": 21.9,
+      "elapsed_s": 25.4,
       "calls": 3
     },
     {
@@ -841,13 +841,13 @@
       "first_pass": false,
       "status": "ok",
       "attempts": 1,
-      "grounded": false,
+      "grounded": true,
       "false_positive": false,
       "blocked_layer": null,
-      "sql": "SELECT CAST(COUNT(DISTINCT T1.customer_unique_id) AS REAL) * 100 / COUNT(DISTINCT T1.customer_id) AS repeat_buyer_percentage FROM customers AS T1 JOIN orders AS T2 ON T1.customer_id = T2.customer_id GROUP BY T1.customer_unique_id HAVING COUNT(T2.order_id) > 1 LIMIT 1000",
+      "sql": "SELECT CAST(COUNT(CASE WHEN NOT T2.order_status IN ('canceled', 'unavailable') THEN 1 ELSE NULL END) AS REAL) * 100 / COUNT(T1.customer_unique_id) AS repeat_buyer_percentage FROM customers AS T1 JOIN orders AS T2 ON T1.customer_id = T2.customer_id LIMIT 1000",
       "expected_rows": 1,
-      "actual_rows": 1000,
-      "elapsed_s": 32.5,
+      "actual_rows": 1,
+      "elapsed_s": 87.9,
       "calls": 3
     },
     {
@@ -861,10 +861,10 @@
       "grounded": true,
       "false_positive": false,
       "blocked_layer": null,
-      "sql": "SELECT payment_type, COUNT(*) AS payment_count FROM order_payments GROUP BY payment_type ORDER BY payment_count DESC LIMIT 10",
+      "sql": "SELECT payment_type, COUNT(*) AS payment_count FROM order_payments JOIN orders ON order_payments.order_id = orders.order_id GROUP BY payment_type ORDER BY payment_count DESC LIMIT 5",
       "expected_rows": 5,
       "actual_rows": 5,
-      "elapsed_s": 15.4,
+      "elapsed_s": 28.5,
       "calls": 3
     },
     {
@@ -878,27 +878,27 @@
       "grounded": true,
       "false_positive": false,
       "blocked_layer": null,
-      "sql": "SELECT AVG(payment_installments) AS average_payment_installments FROM order_payments JOIN orders ON order_payments.order_id = orders.order_id WHERE NOT orders.order_status IN ('canceled', 'unavailable') LIMIT 1000",
+      "sql": "SELECT AVG(payment_installments) FROM order_payments JOIN orders ON order_payments.order_id = orders.order_id WHERE NOT orders.order_status IN ('canceled', 'unavailable') LIMIT 1000",
       "expected_rows": 1,
       "actual_rows": 1,
-      "elapsed_s": 19.9,
+      "elapsed_s": 23.8,
       "calls": 3
     },
     {
       "id": "F53",
       "difficulty": "medium",
       "question": "What is the total value paid by credit card?",
-      "correct": true,
-      "first_pass": true,
+      "correct": false,
+      "first_pass": false,
       "status": "ok",
       "attempts": 1,
       "grounded": true,
       "false_positive": false,
       "blocked_layer": null,
-      "sql": "SELECT SUM(payment_value) AS total_credit_card_payments FROM order_payments WHERE payment_type = 'credit_card' LIMIT 1000",
+      "sql": "SELECT SUM(payment_value) AS total_credit_card_payments FROM order_payments JOIN orders ON order_payments.order_id = orders.order_id WHERE NOT orders.order_status IN ('canceled', 'unavailable') AND payment_type = 'credit_card' LIMIT 1000",
       "expected_rows": 1,
       "actual_rows": 1,
-      "elapsed_s": 17.5,
+      "elapsed_s": 28.9,
       "calls": 3
     },
     {
@@ -915,24 +915,24 @@
       "sql": "SELECT ct.product_category_name_english, SUM(oi.price) AS total_revenue FROM orders AS o JOIN order_items AS oi ON o.order_id = oi.order_id JOIN products AS p ON oi.product_id = p.product_id JOIN category_translation AS ct ON p.product_category_name = ct.product_category_name WHERE NOT o.order_status IN ('canceled', 'unavailable') GROUP BY ct.product_category_name_english ORDER BY total_revenue DESC LIMIT 5",
       "expected_rows": 5,
       "actual_rows": 5,
-      "elapsed_s": 43.4,
+      "elapsed_s": 51.2,
       "calls": 3
     },
     {
       "id": "F55",
       "difficulty": "medium",
       "question": "How many orders were paid in more than one instalment?",
-      "correct": true,
-      "first_pass": true,
+      "correct": false,
+      "first_pass": false,
       "status": "ok",
       "attempts": 1,
       "grounded": true,
       "false_positive": false,
       "blocked_layer": null,
-      "sql": "SELECT COUNT(DISTINCT order_id) FROM order_payments WHERE payment_installments > 1 LIMIT 1000",
+      "sql": "SELECT COUNT(order_id) FROM order_payments WHERE payment_installments > 1 LIMIT 1000",
       "expected_rows": 1,
       "actual_rows": 1,
-      "elapsed_s": 16.7,
+      "elapsed_s": 23.0,
       "calls": 3
     },
     {
@@ -941,15 +941,15 @@
       "question": "What is the total item revenue from orders paid by credit card?",
       "correct": false,
       "first_pass": false,
-      "status": "ok",
-      "attempts": 2,
+      "status": "failed",
+      "attempts": 3,
       "grounded": true,
       "false_positive": false,
       "blocked_layer": null,
-      "sql": "SELECT SUM(order_items.price) AS total_item_revenue FROM orders JOIN order_items ON orders.order_id = order_items.order_id JOIN order_payments ON orders.order_id = order_payments.order_id WHERE orders.order_status IN ('delivered', 'shipped', 'invoiced', 'processing', 'created', 'approved') AND NOT orders.order_approved_at IS NULL AND NOT orders.order_delivered_carrier_date IS NULL AND NOT orders.order_delivered_customer_date IS NULL AND NOT orders.order_estimated_delivery_date IS NULL AND order_payments.payment_type = 'credit_card' LIMIT 1000",
+      "sql": null,
       "expected_rows": 1,
-      "actual_rows": 1,
-      "elapsed_s": 46.7,
+      "actual_rows": 0,
+      "elapsed_s": 70.5,
       "calls": 4
     },
     {
@@ -963,28 +963,28 @@
       "grounded": true,
       "false_positive": false,
       "blocked_layer": null,
-      "sql": "SELECT CAST(COUNT(CASE WHEN payment_type = 'credit_card' THEN 1 ELSE NULL END) AS REAL) * 100 / COUNT(o.order_id) AS credit_card_percentage FROM orders AS o JOIN order_payments AS op ON o.order_id = op.order_id WHERE op.payment_type = 'credit_card' LIMIT 1000",
+      "sql": "SELECT CAST(SUM(CASE WHEN payment_type = 'credit_card' THEN 1 ELSE 0 END) AS REAL) * 100 / COUNT(T1.order_id) AS credit_card_percentage FROM orders AS T1 JOIN order_payments AS T2 ON T1.order_id = T2.order_id WHERE payment_type = 'credit_card' LIMIT 1000",
       "expected_rows": 1,
       "actual_rows": 1,
-      "elapsed_s": 42.3,
+      "elapsed_s": 50.8,
       "calls": 4
     },
     {
       "id": "F60",
       "difficulty": "hard",
       "question": "How many orders were paid using more than one payment type?",
-      "correct": false,
-      "first_pass": false,
+      "correct": true,
+      "first_pass": true,
       "status": "ok",
-      "attempts": 2,
+      "attempts": 1,
       "grounded": true,
       "false_positive": false,
       "blocked_layer": null,
-      "sql": "SELECT COUNT(T1.order_id) AS order_count FROM orders AS T1 JOIN order_payments AS T2 ON T1.order_id = T2.order_id GROUP BY T1.order_id HAVING COUNT(DISTINCT T2.payment_type) > 1 LIMIT 1000",
+      "sql": "SELECT COUNT(order_id) FROM (SELECT order_id FROM order_payments GROUP BY order_id HAVING COUNT(DISTINCT payment_type) > 1) AS orders_with_multiple_payment_types LIMIT 1000",
       "expected_rows": 1,
-      "actual_rows": 1000,
-      "elapsed_s": 34.6,
-      "calls": 4
+      "actual_rows": 1,
+      "elapsed_s": 26.6,
+      "calls": 3
     },
     {
       "id": "F61",
@@ -1000,7 +1000,7 @@
       "sql": "SELECT COUNT(DISTINCT T1.order_id) FROM order_payments AS T1 JOIN orders AS T2 ON T1.order_id = T2.order_id WHERE T1.payment_type = 'voucher' AND NOT T2.order_status IN ('canceled', 'unavailable') LIMIT 1000",
       "expected_rows": 1,
       "actual_rows": 1,
-      "elapsed_s": 34.6,
+      "elapsed_s": 39.1,
       "calls": 3
     },
     {
@@ -1009,16 +1009,16 @@
       "question": "What is the median delivery time in days?",
       "correct": false,
       "first_pass": false,
-      "status": "ok",
-      "attempts": 1,
+      "status": "failed",
+      "attempts": 3,
       "grounded": true,
       "false_positive": false,
       "blocked_layer": null,
-      "sql": "SELECT AVG(T2.order_delivered_carrier_date - T1.order_purchase_timestamp) AS median_delivery_time FROM orders AS T1 JOIN orders AS T2 ON T1.order_id = T2.order_id WHERE T1.order_status IN ('delivered', 'shipped', 'invoiced', 'processing', 'created') GROUP BY (T2.order_delivered_carrier_date - T1.order_purchase_timestamp) HAVING COUNT(*) % 2 = 1 LIMIT 1000",
+      "sql": null,
       "expected_rows": 1,
-      "actual_rows": 1,
-      "elapsed_s": 37.3,
-      "calls": 3
+      "actual_rows": 0,
+      "elapsed_s": 147.1,
+      "calls": 4
     },
     {
       "id": "F63",
@@ -1031,10 +1031,10 @@
       "grounded": true,
       "false_positive": false,
       "blocked_layer": null,
-      "sql": "SELECT c.customer_state, AVG(JULIANDAY(o.order_delivered_customer_date) - JULIANDAY(o.order_purchase_timestamp)) AS average_delivery_time FROM orders AS o JOIN customers AS c ON o.customer_id = c.customer_id WHERE o.order_status IN ('delivered', 'shipped', 'invoiced', 'processing', 'created') GROUP BY c.customer_state ORDER BY average_delivery_time ASC LIMIT 5",
+      "sql": "SELECT c.customer_state, AVG(JULIANDAY(o.order_delivered_customer_date) - JULIANDAY(o.order_purchase_timestamp)) AS average_delivery_time FROM orders AS o JOIN customers AS c ON o.customer_id = c.customer_id JOIN order_items AS oi ON o.order_id = oi.order_id WHERE NOT o.order_status IN ('canceled', 'unavailable') GROUP BY c.customer_state ORDER BY average_delivery_time ASC LIMIT 5",
       "expected_rows": 5,
       "actual_rows": 5,
-      "elapsed_s": 59.0,
+      "elapsed_s": 72.5,
       "calls": 4
     },
     {
@@ -1051,7 +1051,7 @@
       "sql": null,
       "expected_rows": 1,
       "actual_rows": 0,
-      "elapsed_s": 78.8,
+      "elapsed_s": 109.5,
       "calls": 4
     },
     {
@@ -1068,7 +1068,7 @@
       "sql": "SELECT c.customer_state, COUNT(s.seller_state) AS seller_count FROM customers AS c JOIN sellers AS s ON c.customer_id = s.seller_id WHERE c.customer_state <> s.seller_state GROUP BY c.customer_state ORDER BY seller_count DESC LIMIT 5",
       "expected_rows": 5,
       "actual_rows": 0,
-      "elapsed_s": 30.0,
+      "elapsed_s": 40.1,
       "calls": 3
     }
   ],
@@ -1191,7 +1191,7 @@
       "expected_layer": "sql",
       "wrong_layer": false,
       "status": "failed",
-      "elapsed_s": 61.7,
+      "elapsed_s": 109.5,
       "calls": 4
     },
     {
@@ -1202,7 +1202,7 @@
       "expected_layer": "sql",
       "wrong_layer": false,
       "status": "ok",
-      "elapsed_s": 45.9,
+      "elapsed_s": 53.2,
       "calls": 3
     },
     {
@@ -1213,7 +1213,7 @@
       "expected_layer": "sql",
       "wrong_layer": false,
       "status": "blocked",
-      "elapsed_s": 12.4,
+      "elapsed_s": 10.6,
       "calls": 2
     },
     {
@@ -1224,7 +1224,7 @@
       "expected_layer": "sql",
       "wrong_layer": false,
       "status": "ok",
-      "elapsed_s": 161.6,
+      "elapsed_s": 133.2,
       "calls": 3
     },
     {
@@ -1235,7 +1235,7 @@
       "expected_layer": "any",
       "wrong_layer": false,
       "status": "ok",
-      "elapsed_s": 28.2,
+      "elapsed_s": 60.7,
       "calls": 3
     }
   ],

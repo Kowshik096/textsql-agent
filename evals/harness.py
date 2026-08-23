@@ -84,13 +84,23 @@ def results_match(actual, expected) -> bool:
 # --- cache ------------------------------------------------------------------
 
 def run_key(case_id: str) -> str:
-    """Everything that could change the answer goes into the key."""
+    """
+    Everything that could change the answer goes into the key.
+
+    That includes the schema *text*, not just the configuration name. Editing
+    a COLUMN_NOTE or a SCHEMA_NOTE changes what the model sees while leaving
+    SCHEMA="full" unchanged, so a key without the text would serve yesterday's
+    results for today's prompt - and the before/after comparison the whole day
+    exists to produce would be a comparison of nothing.
+    """
     parts = [
         case_id,
         llm.MODEL,
         db.SCHEMA,
+        hashlib.sha1(db.describe_schema().encode()).hexdigest()[:12],
         str(graph.USE_PLANNER),
         str(graph.MAX_ATTEMPTS),
+        str(llm.RETRY_TEMPERATURE),
         os.environ.get("ANSWER", "1"),
     ]
     return hashlib.sha1("|".join(parts).encode()).hexdigest()[:16]
