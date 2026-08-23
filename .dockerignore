@@ -1,0 +1,23 @@
+# The venv is the host's, and it is larger than everything else combined.
+sqlagent_env/
+
+# Full CSVs and the built database. The image uses data/sample; mount the real
+# data at runtime with -v "$(pwd)/data:/app/data" -e DATA_SOURCE=full
+data/*.csv
+data/*.db
+
+# Private working notes, not deliverables.
+BUILD_LOG.md
+LEARNING_PHASES.md
+
+# Derived artefacts.
+evals/.cache/
+evals/*.log
+charts/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+.git/
+.github/
+tests/
