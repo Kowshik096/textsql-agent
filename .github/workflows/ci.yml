@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      # The lock file, not requirements.txt. A project whose headline claim is
+      # deterministic regression gating cannot install floating dependencies.
+      - name: Install
+        run: pip install -r requirements.lock.txt
+
+      # The full CSVs are ~60 MB and gitignored, so CI builds its database from
+      # the committed fixture in data/sample - sampled anchored on order ids so
+      # joins still resolve. Without it the suite would have no database and
+      # most of it would be skipped into meaninglessness.
+      - name: Build the sample database
+        run: DATA_SOURCE=sample python src/db.py
+        env:
+          DATA_SOURCE: sample
+
+      - name: Tests
+        run: python -m pytest tests/ -q
+        env:
+          DATA_SOURCE: sample
+
+      # Enforces the committed benchmark result. The runner is CPU-only with no
+      # Ollama, so the model cannot be run here - re-running the benchmark
+      # locally is part of a release, and committing a regression fails this.
+      - name: Quality gate
+        run: python scripts/check_gate.py

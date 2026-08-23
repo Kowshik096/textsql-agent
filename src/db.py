@@ -20,8 +20,16 @@ import pandas as pd
 # A relative path resolves differently under `python src/db.py`, uvicorn,
 # pytest and Docker — and the failure ("unable to open database file") gives
 # no hint that the cwd is the problem.
-DATA_DIR = Path(__file__).resolve().parent.parent / "data"
-DB_PATH = DATA_DIR / "olist.db"
+_ROOT = Path(__file__).resolve().parent.parent
+
+# DATA_SOURCE=sample points at the small committed fixture in data/sample.
+# CI has no Ollama and the full CSVs are gitignored, so without this the suite
+# would have no database and most of it would be skipped into meaninglessness.
+# The fixture is sampled anchored on order ids, so joins still resolve.
+DATA_SOURCE = os.environ.get("DATA_SOURCE", "full").lower()
+
+DATA_DIR = _ROOT / "data" / "sample" if DATA_SOURCE == "sample" else _ROOT / "data"
+DB_PATH = DATA_DIR / ("olist_sample.db" if DATA_SOURCE == "sample" else "olist.db")
 
 # The schema is a variable, not a constant, so Day 4 can measure what extra
 # tables cost in execution accuracy instead of asserting it.
