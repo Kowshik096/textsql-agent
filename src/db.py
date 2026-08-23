@@ -96,13 +96,25 @@ if SCHEMA != "core":
 #       orders o JOIN sellers s ON o.seller_id = s.seller_id
 #   which is wrong three times over - orders has no seller_id, the path runs
 #   through order_items, and the model repeated it on every retry.
+# The wording below is the measured winner, not the best-written option, and
+# the difference is worth recording. A rescoped version - conditional "IF a
+# question needs both orders and sellers..." plus an explicit "use the fewest
+# tables that answer the question" - reads better and scored 39.7%, exactly
+# back to baseline, against 44.4% for the imperative below. Hard-tier accuracy
+# was 17.9% against 28.6%.
+#
+# The blunt imperative wins despite a known cost: it causes the model to
+# over-join on a handful of single-table aggregates (F08, F15, F18, F53, F55),
+# which the softer version fixed while giving back more than it gained. Net
+# +4.7 points with five known regressions beat net zero with none.
+#
+# Both variants were run over the full 78-case suite because a three-case
+# sample pointed the other way. Prompt changes on a 3B model trade failure
+# classes rather than improving monotonically.
 SCHEMA_NOTES = [
-    "Use the fewest tables that answer the question. If every column you need "
-    "is in one table, query that table alone - an unnecessary JOIN silently "
-    "drops rows that do not match and changes the answer.",
-    "orders does not contain seller_id or product_id. IF a question needs both "
-    "orders and sellers, or orders and products, join through order_items.",
-    "products has no product_name or title column. A product is identified by "
+    "orders has NO seller_id and NO product_id. To connect orders to sellers "
+    "or products you MUST go through order_items.",
+    "products has NO product_name or title column. A product is identified by "
     "product_id; its only descriptive field is product_category_name.",
 ]
 
