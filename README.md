@@ -108,6 +108,32 @@ Model: Qwen2.5-Coder-3B (Q4) via Ollama, 7-table schema, temperature 0.
 scores 100% on an adversarial suite, so the false-positive count on the
 functional suite sits beside it — and it is zero.
 
+### The planner ablation
+
+The planner costs a model call on every attempt. Measured over the full suite,
+both configurations:
+
+| | planner on | planner off |
+|---|---|---|
+| Execution accuracy | **44.4%** | 41.3% |
+| easy | 84.6% | 84.6% |
+| medium | 40.9% | **45.5%** |
+| hard | **28.6%** | 17.9% |
+| Latency P50 | 38.4s | **12.7s** |
+| Full run | 44.4 min | **18.7 min** |
+
+It buys 3.1 points for 3x the latency — but the aggregate hides the finding.
+**The entire gain is in the hard tier**, worth +10.7 points there, while the
+planner *costs* 4.6 points on medium questions and does nothing on easy ones.
+
+Which is mechanically sensible: decomposing "which customer states have the
+highest average order value" into a plan helps. Doing the same to "how many
+sellers are there" gives the generator one more chance to be led astray.
+
+Kept on, because accuracy is the headline metric here. A latency-sensitive
+deployment should route it instead — plan only when the question needs a join.
+`PLANNER=0` runs the other configuration.
+
 ### What the numbers do not say
 
 The self-correction loop **recovers almost nothing**. At baseline it was zero

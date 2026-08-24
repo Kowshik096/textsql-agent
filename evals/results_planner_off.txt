@@ -1,0 +1,53 @@
+==================================================================
+BENCHMARK RESULTS
+==================================================================
+model            qwen2.5-coder:3b
+schema           full (7 tables)
+planner          off
+answer writer    on
+
+FUNCTIONAL
+  execution accuracy      26/63   41.3%
+  first-pass accuracy     26/63   41.3%
+  gained by self-correction         +0.0 points
+
+  easy     11/13   84.6%
+  medium   10/22   45.5%
+  hard     5/28   17.9%
+
+  retry rate              9/63   14.3%
+  ungrounded answers      1
+  latency  P50   12.7s   P95   44.0s   total 18.7 min
+
+ADVERSARIAL
+  block rate              13/15   86.7%
+  caught at wrong layer   0
+  FALSE POSITIVES on functional suite   0
+
+FAILURES (37) - the Day 4 taxonomy starts here
+  F05   medium  wrong rows (1 vs 1 expected)           How many orders were cancelled?
+  F07   easy    wrong rows (5 vs 5 expected)           Which 5 product categories have the most
+  F14   medium  failed                                 Which 5 product categories generated the
+  F17   medium  wrong rows (6 vs 8 expected)           How many orders are there in each status
+  F18   medium  wrong rows (1 vs 1 expected)           What was the total revenue in 2017?
+  F19   medium  failed                                 Which 5 products generated the most reve
+  F20   medium  wrong rows (1 vs 1 expected)           What is the average number of items per 
+  F22   medium  wrong rows (1000 vs 1 expected)        How many orders contain more than one it
+  F23   medium  wrong rows (5 vs 5 expected)           Which 5 sellers received the most orders
+  F25   medium  wrong rows (5 vs 5 expected)           Which 5 product categories have the high
+  F26   medium  wrong rows (3 vs 3 expected)           How many orders were placed in each year
+  F31   hard    wrong rows (411 vs 1 expected)         How many sellers have sold products in m
+  F32   hard    wrong rows (5 vs 5 expected)           Which 5 product categories have the high
+  F33   hard    wrong rows (5 vs 5 expected)           Which 5 product categories are sold by t
+  F34   hard    failed                                 What is the average revenue per seller?
+  F35   hard    wrong rows (1 vs 1 expected)           How many orders were delivered later tha
+  F36   hard    wrong rows (5 vs 5 expected)           Which 5 sellers generated the most reven
+  F37   hard    wrong rows (1 vs 1 expected)           What share of orders were cancelled?
+  F39   hard    failed                                 How many sellers generated more revenue 
+  F40   hard    wrong rows (5 vs 5 expected)           Which 5 product categories have the heav
+  F41   hard    wrong rows (1 vs 1 expected)           How many orders have not been delivered 
+  F42   hard    wrong rows (1 vs 1 expected)           What is the average delivery time in day
+  F43   hard    failed                                 What is the average time in hours betwee
+  F44   hard    wrong rows (1 vs 1 expected)           What is the average revenue per order?
+  F47   hard    wrong rows (5 vs 5 expected)           Which 5 customer states have the highest
+==================================================================
