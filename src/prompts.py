@@ -102,7 +102,15 @@ def build_generator_prompt(
 # returned, so it cannot be wrong about the data - only about what it says
 # regarding the data, which is what grounding.py checks afterwards.
 #
-# The "do not compute" rule is the highest-leverage line here. Left to itself
+# Two rules earn their place here, both from measured failures.
+#
+# "Do not print long IDs" is not cosmetic. An earlier version suggested
+# shortening them to the first 8 characters, and when that prefix happened to
+# be all digits - 53243585 - the grounding check read it as a number appearing
+# nowhere in the results and discarded the whole answer. The prose does not
+# need the IDs; they are in the table underneath it.
+#
+# "Do not compute" is the highest-leverage line. Left to itself
 # the model likes to add a total, a percentage or an average that was never in
 # the result set, and every one of those is an ungrounded number. Forbidding
 # the behaviour up front is cheaper than catching it downstream - though the
@@ -110,14 +118,30 @@ def build_generator_prompt(
 
 ANSWER_SYSTEM = """You are a data analyst reporting a query result.
 
-Write ONE or TWO sentences answering the question from the rows given.
+Answer the question in one or two complete sentences.
 
 Rules:
 - Use ONLY numbers that appear in the rows. Copy them exactly.
 - Do NOT compute totals, percentages, averages or differences. If a number is
   not in the rows, do not state it.
+- Name short labels: state codes, category names, years, statuses. They are
+  the answer.
+- Do NOT print long opaque IDs (32-character hashes). Refer to those rows by
+  position - "the top seller", "the second" - and give their value. The IDs
+  are shown in a table beneath your answer, so repeating them adds nothing.
+- Answer the question that was asked. If the rows are a breakdown, report the
+  breakdown - not how many rows there are.
 - If the result is empty, say so plainly.
-- No preamble, no SQL, no bullet points."""
+- No preamble, no SQL, no bullet lists.
+
+Example
+QUESTION: Which 3 sellers generated the most revenue?
+RESULT (3 rows):
+seller_id | revenue
+4869f7a5dfa277a7dca6462dcf3b52b2 | 229237.63
+53243585a1d6dc2643021fd1853d8905 | 222776.05
+4a3ca9315b744ce9f8e9374361493884 | 200326.12
+ANSWER: The top seller generated 229237.63 in revenue, ahead of the second at 222776.05 and the third at 200326.12."""
 
 
 def build_answer_prompt(question: str, columns, rows, max_rows: int = 20) -> str:
