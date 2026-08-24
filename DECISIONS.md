@@ -247,7 +247,68 @@ that the number is good, but that the constraint was treated as a design
 parameter and measured: accuracy against model size, holding tuning constant so
 the comparison isolates size rather than confounding it with coder-tuning.
 
-## 20. Known limitations
+## 20. The planner was kept, but only the ablation justifies it
+
+The planner costs a model call on every attempt. Measured both ways over the
+full suite:
+
+| | planner on | planner off |
+|---|---|---|
+| accuracy | **44.4%** | 41.3% |
+| easy | 84.6% | 84.6% |
+| medium | 40.9% | **45.5%** |
+| hard | **28.6%** | 17.9% |
+| P50 latency | 38.4s | **12.7s** |
+
+3.1 points for 3x the latency. The aggregate hides the finding: the entire gain
+is in the hard tier, worth +10.7 there, while the planner *costs* 4.6 points on
+medium questions and does nothing at all on easy ones.
+
+Mechanically sensible rather than noise. Decomposing "which customer states
+generated the most revenue" into a plan helps; doing the same to "how many
+sellers are there" hands the generator one more chance to be led astray.
+
+Kept on because accuracy is the headline metric. The position the data actually
+supports is neither "use a planner" nor "drop it" but *route* it - plan only
+when the question needs a join. `PLANNER=0` runs the other configuration.
+
+## 21. The gate fails the build at 100% accuracy
+
+`scripts/check_gate.py` enforces three conditions, and they are not the same
+kind of condition.
+
+Accuracy is a **band**: >= 40%, roughly four points under the measured 44.4%.
+Wide enough that ordinary run-to-run drift does not block an unrelated merge,
+tight enough that a real regression trips it.
+
+The other two are **absolute**. Zero false positives on the functional suite,
+zero harmful executions on the adversarial suite. A build with 100% accuracy
+and one adversarial case that reached outside the allowlist fails, because
+"mostly refuses to drop your tables" is not a property.
+
+The gate has its own tests (`tests/test_gate.py`), each failure mode asserted
+independently - a gate that only fails when several things are wrong at once
+will pass a build that is wrong in exactly one way. They also assert the
+inverse: a *deflected* case, where the model answered a related question with
+permitted data, does **not** fail the build. Scoring a safe outcome as a breach
+is how a gate gets weakened to make CI green again, which is worse than having
+no gate.
+
+## 22. One question is one trace
+
+Each graph node is decorated for tracing, and the naive version of that gives
+every node its own root span - so a single question arrived at Langfuse as
+three unrelated traces. That loses the thing a trace is for: seeing that
+attempt 2 followed attempt 1 *for the same question*, and which guard fired on
+the way. `answer()` is the root span, and the nodes nest beneath it.
+
+The test suite is blocked from tracing, and the mechanism is worth recording
+because the obvious version does not work. Removing the keys from the
+environment lets `load_dotenv(override=False)` put them straight back from
+`.env` - `override=False` only declines to overwrite a key that is already
+*present*. `tests/conftest.py` sets them to empty strings instead.
+
+## 23. Known limitations
 
 - **Prompt injection is not solved.** The input filter catches known phrasings
   and nothing more. The honest defence is that layer 2 does not trust layer 1.
@@ -256,12 +317,21 @@ the comparison isolates size rather than confounding it with coder-tuning.
 - **The 10s query timeout can fail correct SQL.** A semantically right query
   that happens to be a correlated subquery over an unindexed column will time
   out. Check whether a slow case is wrong or merely unindexed.
-- **Answer prose is weak on a 3B model.** It tends to return bare identifier
-  lists rather than sentences.
-- **The self-correction loop currently recovers nothing.** Measured at
-  baseline: twelve retries, zero recoveries, byte-identical SQL each time. The
-  error text reaches the prompt; at temperature 0 the model is not sensitive
-  enough to it to change a token. This is the honest state, and the thing
-  Day 4 exists to fix.
+- **Answer prose needed a worked example, not more rules.** It used to return
+  bare identifier lists - `4869f7a5dfa277a7dca...` - and answered "how many
+  orders per year" with `3`, the row count. The prompt had asked for sentences
+  and never shown one. Adding a single example fixed both. The first attempt at
+  a fix made it worse in a useful way: telling the model to shorten IDs to
+  their first 8 characters produced `53243585`, which grounding.py read as a
+  number appearing nowhere in the results and discarded the whole answer.
+- **The self-correction loop recovers a little, and only because of
+  temperature.** At baseline it recovered *nothing*: twelve retries, zero
+  recoveries, byte-identical SQL each time. The error text was reaching the
+  prompt, but at temperature 0 the model was not sensitive enough to it to
+  change a single token - the loop was theatre. Raising retry temperature to
+  0.3 (see `llm.RETRY_TEMPERATURE`) turned it into 1 recovery from 9 retries,
+  worth +1.6 points. Honest reading: the loop works, and it is worth far less
+  than the architecture diagram implies. Most failures are not the kind a
+  retry can fix.
 - **Repeat-customer analysis is thin.** 2,997 of 96,096 people ordered more
   than once; only 19 have five or more orders.
