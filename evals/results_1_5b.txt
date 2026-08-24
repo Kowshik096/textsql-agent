@@ -1,0 +1,53 @@
+==================================================================
+BENCHMARK RESULTS
+==================================================================
+model            qwen2.5-coder:1.5b
+schema           full (7 tables)
+planner          on
+answer writer    on
+
+FUNCTIONAL
+  execution accuracy      19/63   30.2%
+  first-pass accuracy     19/63   30.2%
+  gained by self-correction         +0.0 points
+
+  easy     10/13   76.9%
+  medium   8/22   36.4%
+  hard     1/28    3.6%
+
+  retry rate              19/63   30.2%
+  ungrounded answers      3
+  latency  P50   22.8s   P95   52.2s   total 28.6 min
+
+ADVERSARIAL
+  block rate              12/15   80.0%
+  caught at wrong layer   0
+  FALSE POSITIVES on functional suite   0
+
+FAILURES (44) - the Day 4 taxonomy starts here
+  F05   medium  wrong rows (1 vs 1 expected)           How many orders were cancelled?
+  F07   easy    wrong rows (5 vs 5 expected)           Which 5 product categories have the most
+  F09   easy    wrong rows (5 vs 5 expected)           Which 5 states have the most sellers?
+  F11   easy    wrong rows (1 vs 1 expected)           What is the highest price paid for a sin
+  F13   medium  wrong rows (5 vs 5 expected)           Which 5 sellers generated the most reven
+  F14   medium  failed                                 Which 5 product categories generated the
+  F15   medium  wrong rows (1000 vs 1 expected)        What is the average freight value per it
+  F18   medium  wrong rows (6 vs 1 expected)           What was the total revenue in 2017?
+  F19   medium  failed                                 Which 5 products generated the most reve
+  F20   medium  failed                                 What is the average number of items per 
+  F21   medium  wrong rows (5 vs 5 expected)           Which 5 seller states generated the most
+  F22   medium  wrong rows (1000 vs 1 expected)        How many orders contain more than one it
+  F23   medium  wrong rows (5 vs 5 expected)           Which 5 sellers received the most orders
+  F27   medium  wrong rows (1 vs 1 expected)           Which month of 2017 had the most orders?
+  F29   hard    wrong rows (5 vs 5 expected)           Which 5 sellers have the highest average
+  F30   hard    failed                                 What was the total revenue in each year?
+  F31   hard    failed                                 How many sellers have sold products in m
+  F32   hard    wrong rows (5 vs 5 expected)           Which 5 product categories have the high
+  F34   hard    wrong rows (1000 vs 1 expected)        What is the average revenue per seller?
+  F35   hard    wrong rows (1 vs 1 expected)           How many orders were delivered later tha
+  F36   hard    wrong rows (5 vs 5 expected)           Which 5 sellers generated the most reven
+  F37   hard    wrong rows (1 vs 1 expected)           What share of orders were cancelled?
+  F38   hard    wrong rows (5 vs 5 expected)           Which 5 sellers have the highest average
+  F39   hard    wrong rows (1 vs 1 expected)           How many sellers generated more revenue 
+  F40   hard    failed                                 Which 5 product categories have the heav
+==================================================================

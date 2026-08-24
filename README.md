@@ -134,6 +134,41 @@ Kept on, because accuracy is the headline metric here. A latency-sensitive
 deployment should route it instead — plan only when the question needs a join.
 `PLANNER=0` runs the other configuration.
 
+### Model size: 3B vs 1.5B
+
+Same suite, same prompts, same guards, half the parameters.
+
+| | 3B | 1.5B |
+|---|---|---|
+| Execution accuracy | **44.4%** | 30.2% |
+| easy | 84.6% | 76.9% |
+| medium | 40.9% | 36.4% |
+| hard | **28.6%** | **3.6%** |
+| Retry rate | 14.3% | 30.2% |
+| Recovered by retrying | 1 of 9 | **0 of 19** |
+| Latency P50 | 38.4s | 22.8s |
+| Adversarial blocked | 11/15 | 12/15 |
+| Harmful executions | **0** | **0** |
+| False positives | **0** | **0** |
+
+**Capability does not degrade evenly — it falls off a cliff.** The easy tier
+loses 7.7 points and the hard tier loses 25, from 28.6% to 3.6%: one correct
+answer in twenty-eight. Single-table aggregates survive at half the parameters.
+Multi-table join reasoning does not exist at 1.5B.
+
+**The retry loop degrades with the model too.** The 1.5B retries twice as often
+and recovers *nothing* - 19 retries, 0 recoveries, against the 3B's 1 in 9.
+Self-correction is not a property of the architecture; it is a capability the
+model either has or does not, and the loop only exposes it.
+
+**Safety is flat.** Halving the model cost 14 points of accuracy and changed
+nothing about the guardrails: zero harmful executions, zero false positives,
+zero cases caught at the wrong layer, and if anything a slightly *higher* block
+rate. That is the expected consequence of the guards being deterministic code -
+regex, `sqlglot` parsing, a table allowlist - rather than model judgment, and
+running a materially worse model through them is the only way to demonstrate
+it rather than assert it.
+
 ### What the numbers do not say
 
 The self-correction loop **recovers almost nothing**. At baseline it was zero

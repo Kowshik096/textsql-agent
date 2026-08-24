@@ -9,6 +9,7 @@ reasons:
      is visible instead of mysterious.
 """
 
+import os
 import time
 from dataclasses import dataclass, field
 
@@ -16,8 +17,16 @@ import ollama
 
 import tracing
 
-MODEL = "qwen2.5-coder:3b"
-BASELINE_MODEL = "qwen2.5-coder:1.5b"   # size ablation: same tuning as MODEL, half the params
+# MODEL=qwen2.5-coder:1.5b runs the size ablation. An env var rather than an
+# edited constant, matching SCHEMA, ANSWER and PLANNER: an ablation that needs
+# a source edit is one where the two runs can differ by more than the single
+# thing being measured.
+MODEL = os.environ.get("MODEL", "qwen2.5-coder:3b")
+
+# Same tuning, half the parameters. Coder-1.5B rather than general-1.5B so the
+# comparison varies size alone - swapping to qwen2.5:1.5b would vary size and
+# instruction-tuning together and measure neither.
+BASELINE_MODEL = "qwen2.5-coder:1.5b"
 
 # temperature=0 : SQL generation should be deterministic. Same question,
 #                 same SQL — otherwise the eval harness measures noise.

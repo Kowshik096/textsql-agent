@@ -308,7 +308,40 @@ environment lets `load_dotenv(override=False)` put them straight back from
 `.env` - `override=False` only declines to overwrite a key that is already
 *present*. `tests/conftest.py` sets them to empty strings instead.
 
-## 23. Known limitations
+## 23. The guards are deterministic code, and a worse model proves it
+
+The obvious way to build a guardrail on an LLM project is to ask a model
+whether the input looks malicious. This project does not: layer 1 is regex,
+layer 2 parses with `sqlglot` and checks an allowlist, layer 3 compares numbers
+against the result set. No model judgment anywhere in the safety path.
+
+The argument for that was always theoretical - deterministic checks cannot be
+talked out of their conclusion, and they cost nothing per query. The 1.5B run
+turns it into evidence. Halving the parameters cost 14.2 points of accuracy and
+collapsed the hard tier from 28.6% to 3.6%, while the safety numbers did not
+move: 0 harmful executions, 0 false positives, 0 cases caught at the wrong
+layer, and a block rate that went *up* (12/15 against 11/15).
+
+A guardrail whose behaviour depends on model quality is a guardrail that
+degrades exactly when the model is having a bad day. Running a materially worse
+model through the same suite is the only way to show this one does not, and it
+is worth more than the accuracy comparison it came from.
+
+## 24. Self-correction is a model capability, not an architectural one
+
+The 1.5B retried twice as often as the 3B (30.2% against 14.3%) and recovered
+from *none* of them - 19 retries, 0 recoveries. The 3B recovers 1 in 9.
+
+Same loop, same error text fed back into the same prompt, same retry
+temperature. The only variable is the model. So the loop does not create
+self-correction; it exposes whatever capacity for it the model already has, and
+on a small enough model that capacity is zero.
+
+This is worth stating plainly because the architecture diagram implies
+otherwise. The retry edge looks like the cleverest part of the design and is
+almost entirely dependent on something the design does not control.
+
+## 25. Known limitations
 
 - **Prompt injection is not solved.** The input filter catches known phrasings
   and nothing more. The honest defence is that layer 2 does not trust layer 1.
