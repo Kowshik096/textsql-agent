@@ -42,3 +42,8 @@ evals/*.log
 # answers, which is not repo content, and the files run to several MB.
 *lf-events-export*.csv
 langfuse-export*.csv
+
+# Personal planning/draft docs, same treatment as BUILD_LOG.md and
+# LEARNING_PHASES.md: useful locally, not something a code reviewer needs.
+RESUME_BULLETS.md
+NEXT_FIVE_DAYS.md
