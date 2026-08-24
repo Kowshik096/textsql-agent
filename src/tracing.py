@@ -32,6 +32,8 @@ from __future__ import annotations
 import os
 from typing import Any, Callable
 
+import env  # noqa: F401  - loads .env before the keys are read
+
 # Tracing is on only when a key is present. Checked once at import: flipping it
 # per-call would mean a branch on every model call for a setting that cannot
 # change while the process runs.

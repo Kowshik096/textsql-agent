@@ -16,6 +16,8 @@ from pathlib import Path
 
 import pandas as pd
 
+import env  # noqa: F401  - loads .env before anything reads os.environ
+
 # Anchored to the repo root rather than the current working directory.
 # A relative path resolves differently under `python src/db.py`, uvicorn,
 # pytest and Docker — and the failure ("unable to open database file") gives
