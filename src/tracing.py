@@ -96,8 +96,10 @@ def flush() -> None:
 def status() -> dict:
     """Reported by /health, so a deployed instance can be asked whether it is
     actually tracing rather than assumed to be."""
-    return {
-        "enabled": ENABLED,
-        "host": os.environ.get("LANGFUSE_HOST", "https://cloud.langfuse.com")
-        if ENABLED else None,
-    }
+    # Langfuse's own setup snippet writes LANGFUSE_BASE_URL while its docs
+    # elsewhere use LANGFUSE_HOST. The SDK accepts either, so reporting only
+    # one of them makes a correctly-configured instance look misconfigured.
+    host = (os.environ.get("LANGFUSE_HOST")
+            or os.environ.get("LANGFUSE_BASE_URL")
+            or "https://cloud.langfuse.com")
+    return {"enabled": ENABLED, "host": host if ENABLED else None}

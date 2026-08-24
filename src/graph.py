@@ -299,8 +299,17 @@ _GRAPH = None
 _SCHEMA = None
 
 
+@tracing.traced("agent")
 def answer(question: str) -> AgentState:
-    """Run one question end to end. Schema and graph are built once and reused."""
+    """
+    Run one question end to end. Schema and graph are built once and reused.
+
+    Traced as the root span, so one question is ONE trace with the nodes nested
+    inside it. Without this each node decorator opens its own root and a single
+    question arrives at the backend as three unrelated traces - which loses the
+    thing a trace is for: seeing that attempt 2 followed attempt 1 for the same
+    question, and which guard fired on the way.
+    """
     global _GRAPH, _SCHEMA
     if _GRAPH is None:
         _GRAPH = build_graph()
