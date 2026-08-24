@@ -25,6 +25,14 @@ Runs entirely on a local model — no API keys, no data leaving the machine,
   → Refused at the input guard. No SQL generated, no model call made.
 ```
 
+![Demo: a chart question, then a blocked injection attempt, on the Streamlit UI](docs/demo.gif)
+
+The middle stretch is trimmed — a local 3B model genuinely takes 20-40s per
+query, and the recording keeps a few real seconds of that wait rather than
+hiding it, but nobody needs to watch a frozen spinner icon for thirty of them.
+The refusal at the end is not sped up: it really is instant, because the input
+guard runs before any model call.
+
 ---
 
 ## Architecture
