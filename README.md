@@ -182,6 +182,28 @@ otherwise would be the dishonest part.
 
 ---
 
+## Tracing
+
+Optional, and off unless configured:
+
+```bash
+LANGFUSE_PUBLIC_KEY=pk-... LANGFUSE_SECRET_KEY=sk-... uvicorn api:app --app-dir src
+```
+
+One question is one trace: `plan` and `generate_and_execute` and `verify` as
+spans, each model call as a generation carrying prompt tokens, latency and the
+temperature actually used. Guard verdicts, retry counts and the grounding
+result are attached as span metadata.
+
+Without a key the instrumentation is a **no-op by construction** — `traced`
+returns the function untouched, so the traced and untraced code paths are the
+same object rather than merely equivalent. Observability that can break the
+thing it observes is a bad trade, and a project arguing for layered safety
+should not make its own agent depend on a telemetry service being reachable.
+`GET /health` reports whether tracing is actually on.
+
+---
+
 ## What this is, and is not
 
 A **prototype with production discipline** — not a product.

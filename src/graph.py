@@ -31,6 +31,7 @@ import input_guard
 import llm
 import prompts
 import sql_guard
+import tracing
 
 MAX_ATTEMPTS = 3
 
@@ -99,10 +100,13 @@ def n_attempts(state: AgentState) -> int:
 
 # --- nodes ------------------------------------------------------------------
 
+@tracing.traced("plan")
 def plan(state: AgentState) -> dict:
     """Layer 1 guard, then turn the question into a plain-English plan."""
     verdict = input_guard.check(state["question"])
     if not verdict.ok:
+        tracing.annotate(guard="input", blocked=True, reason=verdict.reason,
+                         kind=verdict.kind)
         return {
             "blocked": {"layer": "input", "reason": verdict.reason},
             "status": "blocked",
@@ -118,6 +122,7 @@ def plan(state: AgentState) -> dict:
     return {"plan": reply.text.strip()}
 
 
+@tracing.traced("generate_and_execute")
 def generate_and_execute(state: AgentState) -> dict:
     """
     Generate SQL, check it, run it. Appends exactly one Attempt per pass.
@@ -141,6 +146,9 @@ def generate_and_execute(state: AgentState) -> dict:
     sql = llm.extract_sql(reply.text)
 
     verdict = sql_guard.check(sql)
+    tracing.annotate(attempt=len(attempts) + 1, sql=sql,
+                     guard="sql", guard_ok=verdict.ok,
+                     guard_category=verdict.category)
     if not verdict.ok:
         if verdict.category == "security":
             # No legitimate question makes the model emit DROP or probe
@@ -158,6 +166,8 @@ def generate_and_execute(state: AgentState) -> dict:
         }
 
     result = executor.run(verdict.sql)
+    tracing.annotate(executed=True, ok=result.ok, rows=result.row_count,
+                     error=result.error, elapsed_s=round(result.elapsed_s, 2))
     if not result.ok:
         return {"attempts": [{"sql": verdict.sql, "error": result.error}]}
 
@@ -168,6 +178,7 @@ def generate_and_execute(state: AgentState) -> dict:
     }
 
 
+@tracing.traced("verify")
 def verify(state: AgentState) -> dict:
     """
     The single exit path. Three cases, and only the last one will call the
@@ -212,6 +223,8 @@ def verify(state: AgentState) -> dict:
     answer = reply.text.strip()
 
     verdict = grounding.check(answer, rows, state["question"])
+    tracing.annotate(guard="output", grounded=verdict.ok,
+                     ungrounded=verdict.ungrounded or None)
     if verdict.ok:
         return {"status": "ok", "answer": answer, "grounded": True,
                 "chart_path": chart}
@@ -294,11 +307,13 @@ def answer(question: str) -> AgentState:
     if _SCHEMA is None:
         _SCHEMA = db.describe_schema()
 
-    return _GRAPH.invoke({
+    final = _GRAPH.invoke({
         "question": question,
         "schema": _SCHEMA,
         "attempts": [],
     })
+    tracing.flush()
+    return final
 
 
 if __name__ == "__main__":

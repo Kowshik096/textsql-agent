@@ -14,6 +14,8 @@ from dataclasses import dataclass, field
 
 import ollama
 
+import tracing
+
 MODEL = "qwen2.5-coder:3b"
 BASELINE_MODEL = "qwen2.5-coder:1.5b"   # size ablation: same tuning as MODEL, half the params
 
@@ -79,6 +81,7 @@ class UsageLog:
 usage = UsageLog()
 
 
+@tracing.traced("llm", as_type="generation")
 def chat(system: str, user: str, model: str = MODEL,
          temperature: float = None) -> LLMResponse:
     """
@@ -121,6 +124,9 @@ def chat(system: str, user: str, model: str = MODEL,
         latency_s=latency,
         model=model,
     )
+    tracing.annotate(model=model, prompt_tokens=prompt_tokens,
+                     output_tokens=output_tokens, latency_s=round(latency, 2),
+                     temperature=options.get("temperature"))
     usage.record(response)
     return response
 

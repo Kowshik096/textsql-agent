@@ -35,7 +35,8 @@ from pydantic import BaseModel, Field                           # noqa: E402
 import db                                                       # noqa: E402
 import graph                                                    # noqa: E402
 import llm                                                      # noqa: E402
-import schemas                                                  # noqa: E402
+import schemas
+import tracing                                                  # noqa: E402
 
 app = FastAPI(
     title="Secure Self-Correcting Text-to-SQL Agent",
@@ -61,6 +62,7 @@ class HealthResponse(BaseModel):
     model: str
     schema_config: str
     tables: list[str]
+    tracing: dict
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -72,6 +74,7 @@ def health() -> HealthResponse:
         model=llm.MODEL,
         schema_config=db.SCHEMA,
         tables=sorted(db.TABLES),
+        tracing=tracing.status(),
     )
 
 
