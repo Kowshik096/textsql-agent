@@ -37,3 +37,8 @@ charts/
 # --- eval run artefacts (derived; results.json/.txt are the record) ---
 evals/.cache/
 evals/*.log
+
+# Langfuse exports. Trace data carries the questions asked and the model's
+# answers, which is not repo content, and the files run to several MB.
+*lf-events-export*.csv
+langfuse-export*.csv

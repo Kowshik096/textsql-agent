@@ -238,10 +238,69 @@ Optional, and off unless configured:
 LANGFUSE_PUBLIC_KEY=pk-... LANGFUSE_SECRET_KEY=sk-... uvicorn api:app --app-dir src
 ```
 
-One question is one trace: `plan` and `generate_and_execute` and `verify` as
-spans, each model call as a generation carrying prompt tokens, latency and the
-temperature actually used. Guard verdicts, retry counts and the grounding
-result are attached as span metadata.
+One question is one trace:
+
+```
+agent                                    99.4s
+├─ plan                                  11.2s   guard=input  blocked=false
+│  └─ llm                                11.1s   1,014 prompt / 47 output  temp=0
+├─ generate_and_execute                  62.0s   attempt=1  guard=sql  guard_ok=true
+│  ├─ llm                                47.3s   1,102 prompt / 63 output  temp=0
+│  └─ (executed)                          0.4s   rows=5  ok=true
+└─ verify                                26.2s   grounded=true
+   └─ llm                                26.1s   1,196 prompt / 44 output  temp=0
+```
+
+`answer()` is the root span and the nodes nest beneath it. That is deliberate
+rather than incidental: decorating only the nodes gives each one its own root,
+and a single question arrives as three unrelated traces — which loses the thing
+a trace is for, namely seeing that attempt 2 followed attempt 1 *for the same
+question*, and which guard fired on the way.
+
+Guard verdicts, attempt numbers, the generated SQL, row counts, the grounding
+result and per-call token counts are attached as span metadata, so a trace
+answers "which guard fired, on which attempt, against what SQL" without
+reproducing the run.
+
+### What the traces show
+
+Measured over the benchmark suite (latency and retry from the harness, which
+times complete questions; guard and token figures from a 665-observation
+export covering 145 traces):
+
+| | |
+|---|---|
+| Latency P50 | 38.4s |
+| Latency P95 | 80.5s |
+| Retry rate | 9/63 questions (14.3%) |
+| Recovered by retrying | 1 of 9 |
+| Adversarial | 11 blocked, 4 deflected, **0 harmful** |
+| False positives | **0** |
+| Tokens per model call | 1,080 prompt / 51 output |
+
+Three things in that table are worth more than the latency numbers.
+
+**Layer 2 never fired in production traffic.** Across the export the input
+guard blocked 16 questions and the SQL guard blocked *zero* — every adversarial
+input was caught before a model call happened. That is defence-in-depth working
+as intended, and it is exactly why the SQL guard is tested with the input guard
+**disabled** (`tests/test_layers.py`). A layer that never fires in normal
+operation has no evidence behind it unless something deliberately exercises it.
+
+**Prompt tokens are 21x output tokens** — 1,080 in, 51 out. The schema
+dominates every single call. That is the quantitative reason schema wording is
+the primary accuracy lever on a small model, and it is what a `SCHEMA=core`
+ablation would attack.
+
+**Errors propagate.** During a disk-full incident the Ollama daemon died
+mid-run, and the failure appears on all three levels of the tree — the `llm`
+generation, the `plan` span containing it, and the `agent` root — each carrying
+the connection error. The unhappy path is instrumented, not just the happy one.
+
+A caution on reading the traces directly: their raw P50 is 7.7s, far below the
+38.4s above, because the trace population mixes blocked questions that never
+reach a model (0.2s) and `PLANNER=0` ablation runs in with ordinary ones. The
+table quotes the harness, which measures one population.
 
 Without a key the instrumentation is a **no-op by construction** — `traced`
 returns the function untouched, so the traced and untraced code paths are the
