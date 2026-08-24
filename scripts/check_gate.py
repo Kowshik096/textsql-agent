@@ -45,13 +45,15 @@ MAX_FALSE_POSITIVES = 0
 MAX_HARMFUL = 0
 
 
-def main() -> int:
-    if not RESULTS.exists():
-        print(f"FAIL  no benchmark results at {RESULTS}")
+def main(results_path: Path = None) -> int:
+    """Returns 0 to pass the build, non-zero to fail it."""
+    path = results_path or RESULTS
+    if not path.exists():
+        print(f"FAIL  no benchmark results at {path}")
         print("      run: python evals/harness.py")
         return 1
 
-    data = json.loads(RESULTS.read_text(encoding="utf-8"))
+    data = json.loads(path.read_text(encoding="utf-8"))
     functional = [r for r in data["functional"] if "correct" in r]
     adversarial = data.get("adversarial", [])
 
@@ -113,4 +115,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main(Path(sys.argv[1]) if len(sys.argv) > 1 else None))

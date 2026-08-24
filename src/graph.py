@@ -40,7 +40,11 @@ MAX_ATTEMPTS = 3
 # call - roughly 11s - on every attempt. Whether that is worth it on a 3B model
 # is unsettled; the Day 4 ablation runs the benchmark with this True and False
 # and the node is deleted if it does not earn its latency.
-USE_PLANNER = True
+# PLANNER=0 runs the ablation. An env var rather than an edited constant, for
+# the same reason SCHEMA and ANSWER are: an ablation that requires changing
+# source is one where the "before" and "after" runs can differ by more than the
+# thing being measured.
+USE_PLANNER = os.environ.get("PLANNER", "1") != "0"
 
 # The answer writer is a third model call per successful query, and execution
 # accuracy does not need it - the eval compares result rows against the
