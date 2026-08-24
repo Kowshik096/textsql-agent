@@ -148,6 +148,28 @@ curl -X POST localhost:8000/query -H "Content-Type: application/json" \
   -d '{"question":"Which 5 sellers generated the most revenue?"}'
 ```
 
+### Docker
+
+```bash
+docker build -t textsql-agent .
+docker run --rm -p 8000:8000   -e OLLAMA_HOST=http://host.docker.internal:11434   --add-host=host.docker.internal:host-gateway   textsql-agent
+```
+
+1.04 GB. The image contains neither the model nor the full dataset, and it
+would be broken if it claimed to. Qwen2.5-Coder-3B is ~2 GB and Ollama is a
+service rather than a library, so the container talks to an Ollama on the host
+— which is also how you would deploy it, pointing at a model server instead of
+embedding one. The database is built at image-build time from the committed
+1 MB fixture; mount the real data to use it:
+
+```bash
+-v "$(pwd)/data:/app/data" -e DATA_SOURCE=full
+```
+
+Runs as a non-root user. The agent only reads and the connection is opened
+`?mode=ro`, but abandoning defence in depth at the container boundary would be
+an odd place to stop.
+
 Run the benchmark (~45 minutes, resumable):
 
 ```bash
@@ -161,7 +183,7 @@ python evals/harness.py            # add --smoke for 10 cases
 ## Tests and the quality gate
 
 ```bash
-pytest tests/ -q                   # 114 tests
+pytest tests/ -q                   # 119 tests
 python scripts/check_gate.py       # the CI gate
 ```
 
