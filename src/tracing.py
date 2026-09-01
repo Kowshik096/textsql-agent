@@ -39,11 +39,16 @@ import env  # noqa: F401  - loads .env before the keys are read
 # change while the process runs.
 ENABLED = bool(os.environ.get("LANGFUSE_PUBLIC_KEY"))
 
-_observe = None
+# The SDK's `observe` is an overloaded decorator factory whose exact callable
+# shape changes between releases, so it is held in an Any-typed slot rather
+# than pinned here. The import binds a throwaway name; the holder assignment
+# is what the rest of the module reads.
+_observe: Any = None
 if ENABLED:
     try:
-        from langfuse import observe as _observe        # type: ignore
-    except Exception:                                    # pragma: no cover
+        from langfuse import observe as _langfuse_observe
+        _observe = _langfuse_observe
+    except Exception:                                # pragma: no cover
         # An import failure must not take the agent down with it.
         ENABLED = False
         _observe = None
@@ -59,7 +64,7 @@ def traced(name: str, as_type: str = "span") -> Callable:
     def decorate(fn: Callable) -> Callable:
         if not ENABLED or _observe is None:
             return fn
-        return _observe(fn, name=name, as_type=as_type)
+        return _observe(name=name, as_type=as_type)(fn)
     return decorate
 
 
@@ -72,7 +77,7 @@ def annotate(**fields: Any) -> None:
     if not ENABLED:
         return
     try:
-        from langfuse import get_client                  # type: ignore
+        from langfuse import get_client
         get_client().update_current_span(metadata=fields)
     except Exception:                                    # pragma: no cover
         pass
@@ -87,7 +92,7 @@ def flush() -> None:
     if not ENABLED:
         return
     try:
-        from langfuse import get_client                  # type: ignore
+        from langfuse import get_client
         get_client().flush()
     except Exception:                                    # pragma: no cover
         pass

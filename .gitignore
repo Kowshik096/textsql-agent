@@ -36,7 +36,17 @@ charts/
 
 # --- eval run artefacts (derived; results.json/.txt are the record) ---
 evals/.cache/
+evals/.cache_var*/
 evals/*.log
+evals/logs/
+evals/results_var*.json
+evals/results_var*.txt
+
+# --- external benchmark payloads (Spider; fetched, not authored) ----------
+# The generated yaml files ARE committed evidence; the 200 MB dataset and
+# extracted databases are reproducible via evals/fetch_spider.py.
+evals/external/spider.zip
+evals/external/_extract/
 
 # Langfuse exports. Trace data carries the questions asked and the model's
 # answers, which is not repo content, and the files run to several MB.

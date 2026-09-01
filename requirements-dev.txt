@@ -1,0 +1,12 @@
+# Development-only tools: lint and type checking.
+#
+# Separate from requirements.lock.txt on purpose - the runtime image and CI
+# test job install the runtime lock alone, and a container running the agent
+# gains nothing from a linter. Pinned for the same reason the lock file is:
+# a style rule that appears after a ruff release should not fail yesterday's
+# passing build.
+#
+#     pip install -r requirements-dev.txt
+#
+ruff==0.16.4
+mypy==2.3.1

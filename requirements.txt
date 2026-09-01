@@ -1,7 +1,8 @@
 # ---- Agent orchestration ----
 langgraph
-langchain-core
-langchain-ollama
+# ollama is the actual model client. langchain-ollama was removed after
+# nothing imported it; langchain-core arrives transitively with langgraph.
+
 ollama
 
 # ---- SQL parsing & guardrails ----
@@ -27,8 +28,6 @@ langfuse
 # ---- Config & utils ----
 python-dotenv
 pyyaml
-tabulate
-rich
 
 # ---- Testing / CI gating ----
 pytest

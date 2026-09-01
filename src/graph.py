@@ -24,6 +24,7 @@ from typing import Annotated, Literal, Optional, TypedDict
 from langgraph.graph import END, START, StateGraph
 
 import charts
+import cost_guard
 import db
 import executor
 import grounding
@@ -35,16 +36,20 @@ import tracing
 
 MAX_ATTEMPTS = 3
 
-# The planner splits "decide what data is needed" from "write correct syntax",
-# on the theory that models do both worse at once. It also costs a second model
-# call - roughly 11s - on every attempt. Whether that is worth it on a 3B model
-# is unsettled; the Day 4 ablation runs the benchmark with this True and False
-# and the node is deleted if it does not earn its latency.
-# PLANNER=0 runs the ablation. An env var rather than an edited constant, for
-# the same reason SCHEMA and ANSWER are: an ablation that requires changing
-# source is one where the "before" and "after" runs can differ by more than the
-# thing being measured.
-USE_PLANNER = os.environ.get("PLANNER", "1") != "0"
+# PLANNER selects when the planning node runs:
+#   on / 1     - every question (the committed configuration)
+#   off / 0    - never (PLANNER=0 ran the Day 4 ablation)
+#   auto       - db.suggests_join() decides: plan only multi-table or
+#                comparison questions, per the per-case flip analysis in
+#                results_planner_on/off. Fitted to measured wins/losses, not
+#                intuition; see JOIN_PHRASES in db.py.
+_raw_planner = os.environ.get("PLANNER", "1").strip().lower()
+if _raw_planner in ("auto",):
+    PLANNER_MODE = "auto"
+elif _raw_planner in ("0", "off", "false"):
+    PLANNER_MODE = "off"
+else:
+    PLANNER_MODE = "on"
 
 # The answer writer is a third model call per successful query, and execution
 # accuracy does not need it - the eval compares result rows against the
@@ -91,6 +96,7 @@ class AgentState(TypedDict, total=False):
     grounded: bool
     grounding_reason: Optional[str]
     chart_path: Optional[str]
+    history: list
 
 
 def last_error(state: AgentState) -> Optional[str]:
@@ -104,6 +110,15 @@ def n_attempts(state: AgentState) -> int:
 
 # --- nodes ------------------------------------------------------------------
 
+def planner_for_question(question: str) -> bool:
+    """Resolve PLANNER_MODE for one question."""
+    if PLANNER_MODE == "off":
+        return False
+    if PLANNER_MODE == "on":
+        return True
+    return db.suggests_join(question)
+
+
 @tracing.traced("plan")
 def plan(state: AgentState) -> dict:
     """Layer 1 guard, then turn the question into a plain-English plan."""
@@ -116,13 +131,16 @@ def plan(state: AgentState) -> dict:
             "status": "blocked",
         }
 
-    if not USE_PLANNER:
+    if not planner_for_question(state["question"]):
+        tracing.annotate(planner=False)
         return {"plan": ""}
 
-    reply = llm.chat(
-        prompts.PLANNER_SYSTEM,
-        f"{state['schema']}\n\nQUESTION: {state['question']}",
-    )
+    context = prompts.build_history_block(state.get("history"))
+    user_prompt = f"{state['schema']}\n\nQUESTION: {state['question']}"
+    if context:
+        user_prompt = f"{state['schema']}\n\n{context}\n\nQUESTION: {state['question']}"
+
+    reply = llm.chat(prompts.PLANNER_SYSTEM, user_prompt)
     return {"plan": reply.text.strip()}
 
 
@@ -136,11 +154,20 @@ def generate_and_execute(state: AgentState) -> dict:
     """
     attempts = state.get("attempts") or []
 
+    # The hint is computed only on retries and only in hint mode; it costs a
+    # PRAGMA round-trip, not a model call.
+    retry_hint = None
+    if attempts and prompts.RETRY_MODE == "hint":
+        last = attempts[-1].get("error")
+        retry_hint = executor.retry_hint(last)
+
     user_prompt = prompts.build_generator_prompt(
         schema=state["schema"],
         question=state["question"],
         plan=state.get("plan"),
         attempts=attempts,
+        retry_hint=retry_hint,
+        history=state.get("history"),
     )
     # First attempt deterministic; retries hotter. See llm.RETRY_TEMPERATURE.
     reply = llm.chat(
@@ -169,6 +196,22 @@ def generate_and_execute(state: AgentState) -> dict:
             "attempts": [{"sql": sql, "error": f"rejected before execution: {verdict.reason}"}]
         }
 
+    # ok=True always carries the rewritten SQL. Asserted rather than trusted:
+    # executor.run takes a str, and a None here would be an upstream bug
+    # crashing loudly instead of executing something unvalidated.
+    assert verdict.sql is not None
+
+    # Layer 2.5: the plan shape. A cartesian join over the big tables would
+    # burn the executor's whole time limit and then retry into the same
+    # wall; refusing it here turns a 30s dead end into one correctable hint.
+    cost = cost_guard.check(verdict.sql)
+    tracing.annotate(cost_guard_ok=cost.ok, large_scans=cost.large_scans)
+    if not cost.ok:
+        return {
+            "attempts": [{"sql": verdict.sql,
+                          "error": f"rejected before execution: {cost.reason}"}]
+        }
+
     result = executor.run(verdict.sql)
     tracing.annotate(executed=True, ok=result.ok, rows=result.row_count,
                      error=result.error, elapsed_s=round(result.elapsed_s, 2))
@@ -189,11 +232,12 @@ def verify(state: AgentState) -> dict:
     model - on Day 3, when answer generation and the numeric grounding check
     land here. For now it reports the result factually.
     """
-    if state.get("blocked"):
-        b = state["blocked"]
+    blocked = state.get("blocked")
+    if blocked:
         return {
             "status": "blocked",
-            "answer": f"Refused at the {b['layer']} guard: {b['reason']}",
+            "answer": f"Refused at the {blocked['layer']} guard: "
+                      f"{blocked['reason']}",
         }
 
     if last_error(state) is not None:
@@ -257,7 +301,7 @@ def _factual_summary(columns, rows) -> str:
         return "The query returned no rows."
 
     head = rows[0]
-    pairs = ", ".join(f"{c}={v}" for c, v in zip(columns or [], head))
+    pairs = ", ".join(f"{c}={v}" for c, v in zip(columns or [], head, strict=False))
     if len(rows) == 1:
         return f"The query returned 1 row: {pairs}."
     return f"The query returned {len(rows)} rows. The first is {pairs}."
@@ -300,13 +344,21 @@ def build_graph():
 
 
 _GRAPH = None
-_SCHEMA = None
 
 
 @tracing.traced("agent")
-def answer(question: str) -> AgentState:
+def answer(question: str, history: Optional[list] = None) -> AgentState:
     """
     Run one question end to end. Schema and graph are built once and reused.
+
+    `history` carries prior session turns ({question, sql, columns}) for
+    multi-turn follow-ups; it is prompt context only and changes nothing
+    about guard behaviour.
+
+    With PRUNE=1 the schema is resolved per question instead (cached per
+    table-subset), because a pruned description depends on what the question
+    names. The guard allowlist is untouched either way - pruning changes what
+    the model is TOLD, never what it is PERMITTED.
 
     Traced as the root span, so one question is ONE trace with the nodes nested
     inside it. Without this each node decorator opens its own root and a single
@@ -314,19 +366,56 @@ def answer(question: str) -> AgentState:
     thing a trace is for: seeing that attempt 2 followed attempt 1 for the same
     question, and which guard fired on the way.
     """
-    global _GRAPH, _SCHEMA
+    global _GRAPH
     if _GRAPH is None:
         _GRAPH = build_graph()
-    if _SCHEMA is None:
-        _SCHEMA = db.describe_schema()
+    schema = db.schema_for_question(question)
 
     final = _GRAPH.invoke({
         "question": question,
-        "schema": _SCHEMA,
+        "schema": schema,
         "attempts": [],
+        "history": list(history or []),
     })
     tracing.flush()
     return final
+
+
+def stream_answer(question: str, history: Optional[list] = None):
+    """
+    The same pipeline as answer(), yielded as it happens.
+
+    Yields (node, delta) as each node completes, then ("__final__", state)
+    carrying the fully-merged AgentState - the identical object answer()
+    would have returned. Merging mirrors LangGraph's own reduction rules,
+    which for this state means extending `attempts` and overwriting the rest.
+
+    Exists for the streaming endpoint: a 30-70s wait is tolerable, a silent
+    one is not. Consumers see the plan land, each attempt's SQL appear, and
+    the row count arrive while verification is still running.
+    """
+    global _GRAPH
+    if _GRAPH is None:
+        _GRAPH = build_graph()
+
+    state: dict = {
+        "question": question,
+        "schema": db.schema_for_question(question),
+        "attempts": [],
+        "history": list(history or []),
+    }
+    for chunk in _GRAPH.stream(state, stream_mode="updates"):
+        for node, delta in chunk.items():
+            if node is None or delta is None:
+                continue
+            for key, value in delta.items():
+                if key == "attempts":
+                    state["attempts"] = state.get("attempts", []) + list(value)
+                else:
+                    state[key] = value
+            yield node, delta
+    tracing.flush()
+    yield "__final__", state
 
 
 if __name__ == "__main__":

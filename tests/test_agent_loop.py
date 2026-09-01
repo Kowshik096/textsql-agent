@@ -45,12 +45,12 @@ def scripted(monkeypatch):
 
         def fake_chat(system, user, model=None, temperature=None):
             sent.append(user)
-            # The planner consumes a reply too when USE_PLANNER is on; give it
+            # The planner consumes a reply too when planning is on; give it
             # something harmless and let the SQL replies through in order.
             return FakeReply(queue.pop(0) if queue else "SELECT 1")
 
         monkeypatch.setattr(llm, "chat", fake_chat)
-        monkeypatch.setattr(graph, "USE_PLANNER", False)  # keep the queue 1:1
+        monkeypatch.setattr(graph, "PLANNER_MODE", "off")  # keep the queue 1:1
         graph._GRAPH = None
         return sent
 

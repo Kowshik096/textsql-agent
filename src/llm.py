@@ -90,20 +90,78 @@ class UsageLog:
 usage = UsageLog()
 
 
-@tracing.traced("llm", as_type="generation")
-def chat(system: str, user: str, model: str = MODEL,
-         temperature: float = None) -> LLMResponse:
-    """
-    Send one prompt and return the reply plus timing and token counts.
+# --- providers ---------------------------------------------------------------
+#
+# The hosted comparison (NEXT_FIVE_DAYS Day 2) needs the identical benchmark -
+# same prompts, same guards, same scoring - against a different model, and
+# `chat()` is the only place the model is touched. So the switch lives here:
+#
+#     LLM_PROVIDER=anthropic MODEL=claude-3-5-haiku-latest python evals/harness.py
+#
+# Hosted clients are hand-rolled over `requests` rather than SDK imports: two
+# POST calls need no dependency, and a project that just pruned three dead
+# packages is not going to add two more for a comparison run. API keys are
+# read at call time so tests can inject them and so .env changes do not need
+# a process restart.
 
-    `temperature` overrides the default for this call only. It exists for the
-    retry path: at temperature 0 the model is locked onto its first answer and
-    regenerates it byte-for-byte no matter what the prompt says about the
-    error, so a deterministic retry cannot recover. See RETRY_TEMPERATURE.
-    """
+PROVIDER = os.environ.get("LLM_PROVIDER", "ollama").strip().lower()
+
+# Anthropic requires an explicit ceiling; OpenAI defaults to inf. One generous
+# constant covers both - SQL and prose answers are short.
+HOSTED_MAX_TOKENS = 1024
+
+
+def _require_key(env_var: str) -> str:
+    key = os.environ.get(env_var, "")
+    if not key:
+        raise RuntimeError(
+            f"LLM_PROVIDER={PROVIDER} requires {env_var} in the environment "
+            f"or .env"
+        )
+    return key
+
+
+def _anthropic_body(system: str, user: str, model: str,
+                    temperature: float) -> dict:
+    return {
+        "model": model,
+        "max_tokens": HOSTED_MAX_TOKENS,
+        "temperature": temperature,
+        "system": system,
+        "messages": [{"role": "user", "content": user}],
+    }
+
+
+def _openai_body(system: str, user: str, model: str,
+                 temperature: float) -> dict:
+    return {
+        "model": model,
+        "max_tokens": HOSTED_MAX_TOKENS,
+        "temperature": temperature,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+    }
+
+
+def _parse_anthropic_response(raw: dict) -> tuple:
+    text = "".join(block.get("text", "") for block in raw.get("content", []))
+    usage_in = raw.get("usage", {})
+    return text, usage_in.get("input_tokens", 0), usage_in.get("output_tokens", 0)
+
+
+def _parse_openai_response(raw: dict) -> tuple:
+    choices = raw.get("choices") or [{}]
+    text = choices[0].get("message", {}).get("content", "")
+    usage_in = raw.get("usage", {})
+    return (text, usage_in.get("prompt_tokens", 0),
+            usage_in.get("completion_tokens", 0))
+
+
+def _call_ollama(system: str, user: str, model: str,
+                 temperature: float | None) -> tuple:
     options = OPTIONS if temperature is None else {**OPTIONS, "temperature": temperature}
-
-    start = time.perf_counter()
     raw = ollama.chat(
         model=model,
         messages=[
@@ -113,21 +171,143 @@ def chat(system: str, user: str, model: str = MODEL,
         keep_alive=KEEP_ALIVE,
         options=options,
     )
+    return (raw["message"]["content"], raw.get("prompt_eval_count", 0),
+            raw.get("eval_count", 0))
+
+
+def _call_anthropic(system: str, user: str, model: str,
+                    temperature: float | None) -> tuple:
+    import requests
+
+    key = _require_key("ANTHROPIC_API_KEY")
+    base = os.environ.get("ANTHROPIC_BASE_URL",
+                          "https://api.anthropic.com").rstrip("/")
+    response = requests.post(
+        f"{base}/v1/messages",
+        headers={"x-api-key": key, "anthropic-version": "2023-06-01"},
+        json=_anthropic_body(system, user, model,
+                             OPTIONS["temperature"] if temperature is None
+                             else temperature),
+        timeout=120,
+    )
+    response.raise_for_status()
+    return _parse_anthropic_response(response.json())
+
+
+def _call_openai(system: str, user: str, model: str,
+                 temperature: float | None) -> tuple:
+    import requests
+
+    key = _require_key("OPENAI_API_KEY")
+    base = os.environ.get("OPENAI_BASE_URL",
+                          "https://api.openai.com/v1").rstrip("/")
+    response = requests.post(
+        f"{base}/chat/completions",
+        headers={"Authorization": f"Bearer {key}"},
+        json=_openai_body(system, user, model,
+                          OPTIONS["temperature"] if temperature is None
+                          else temperature),
+        timeout=120,
+    )
+    response.raise_for_status()
+    return _parse_openai_response(response.json())
+
+
+def _gemini_body(system: str, user: str, model: str,
+                 temperature: float) -> dict:
+    return {
+        "system_instruction": {"parts": [{"text": system}]},
+        "contents": [{"role": "user", "parts": [{"text": user}]}],
+        "generationConfig": {
+            "temperature": temperature,
+            "maxOutputTokens": HOSTED_MAX_TOKENS,
+        },
+    }
+
+
+def _parse_gemini_response(raw: dict) -> tuple:
+    candidates = raw.get("candidates") or [{}]
+    parts = (candidates[0].get("content") or {}).get("parts") or []
+    text = "".join(p.get("text", "") for p in parts)
+    usage = raw.get("usageMetadata", {})
+    return (text, usage.get("promptTokenCount", 0),
+            usage.get("candidatesTokenCount", 0))
+
+
+def _call_gemini(system: str, user: str, model: str,
+                 temperature: float | None) -> tuple:
+    import requests
+
+    key = _require_key("GEMINI_API_KEY")
+    base = os.environ.get(
+        "GEMINI_BASE_URL",
+        "https://generativelanguage.googleapis.com/v1beta",
+    ).rstrip("/")
+    response = requests.post(
+        f"{base}/models/{model}:generateContent",
+        headers={"x-goog-api-key": key},
+        json=_gemini_body(system, user, model,
+                          OPTIONS["temperature"] if temperature is None
+                          else temperature),
+        timeout=120,
+    )
+    response.raise_for_status()
+    return _parse_gemini_response(response.json())
+
+
+_CALLERS = {
+    "ollama": _call_ollama,
+    "anthropic": _call_anthropic,
+    "openai": _call_openai,
+    "gemini": _call_gemini,
+}
+
+
+@tracing.traced("llm", as_type="generation")
+def chat(system: str, user: str, model: str = MODEL,
+         temperature: float | None = None,
+         provider: str | None = None) -> LLMResponse:
+    """
+    Send one prompt and return the reply plus timing and token counts.
+
+    `temperature` overrides the default for this call only. It exists for the
+    retry path: at temperature 0 the model is locked onto its first answer and
+    regenerates it byte-for-byte no matter what the prompt says about the
+    error, so a deterministic retry cannot recover. See RETRY_TEMPERATURE.
+
+    `provider` overrides LLM_PROVIDER for this call only. It exists for the
+    offline judge: the benchmark runs on Ollama while the judge grades from a
+    hosted model, so judge ≠ generator is structural rather than claimed.
+    The provider switch lives here, where the hosted comparison (NEXT_FIVE_DAYS
+    Day 2) needs it: same prompts, same guards, only the client changes.
+    """
+    used_provider = (provider or PROVIDER).strip().lower()
+    caller = _CALLERS.get(used_provider)
+    if caller is None:
+        raise RuntimeError(
+            f"LLM_PROVIDER={used_provider!r} is not one of {sorted(_CALLERS)}"
+        )
+    if used_provider != "ollama" and model.startswith("qwen"):
+        raise RuntimeError(
+            f"LLM_PROVIDER={used_provider} needs MODEL set to a hosted model "
+            f"name (e.g. MODEL=gemini-2.5-flash-lite)"
+        )
+
+    start = time.perf_counter()
+    text, prompt_tokens, output_tokens = caller(system, user, model, temperature)
     latency = time.perf_counter() - start
 
-    prompt_tokens = raw.get("prompt_eval_count", 0)
-    output_tokens = raw.get("eval_count", 0)
-
     # Silent truncation is the failure mode you cannot see from the output,
-    # so make it loud here.
-    if prompt_tokens >= CTX_WARN_THRESHOLD:
+    # so make it loud here. Only meaningful on Ollama, where num_ctx exists;
+    # hosted APIs truncate server-side and say so.
+    if used_provider == "ollama" and prompt_tokens >= CTX_WARN_THRESHOLD:
         print(
             f"  [warn] prompt is {prompt_tokens} tokens, nearing the "
             f"{OPTIONS['num_ctx']} limit — schema may get truncated"
         )
 
     response = LLMResponse(
-        text=raw["message"]["content"],
+        text=text,
         prompt_tokens=prompt_tokens,
         output_tokens=output_tokens,
         latency_s=latency,
@@ -135,7 +315,9 @@ def chat(system: str, user: str, model: str = MODEL,
     )
     tracing.annotate(model=model, prompt_tokens=prompt_tokens,
                      output_tokens=output_tokens, latency_s=round(latency, 2),
-                     temperature=options.get("temperature"))
+                     temperature=temperature if temperature is not None
+                     else OPTIONS["temperature"],
+                     provider=used_provider)
     usage.record(response)
     return response
 

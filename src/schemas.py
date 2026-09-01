@@ -62,6 +62,12 @@ class AgentResponse(BaseModel):
 
     chart_path: Optional[str] = None
 
+    session_id: Optional[str] = Field(
+        default=None,
+        description="Present on /chat responses - pass it back to continue "
+                    "the conversation.",
+    )
+
     @model_validator(mode="after")
     def _check_invariants(self):
         if self.status == "blocked" and not self.blocked_reason:

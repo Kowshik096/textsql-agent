@@ -1,0 +1,32 @@
+==================================================================
+BENCHMARK RESULTS
+==================================================================
+model            qwen2.5-coder:3b (ollama)
+judge            gemini-3.5-flash-lite (gemini)
+schema           full (7 tables)
+planner          1
+answer writer    on
+
+FUNCTIONAL
+  execution accuracy      5/8   62.5%
+  first-pass accuracy     5/8   62.5%
+  gained by self-correction         +0.0 points
+
+  easy     5/7   71.4%
+  medium   0/1    0.0%
+
+  retry rate              0/8    0.0%
+  ungrounded answers      0
+  answer quality          7/8 faithful   87.5%   (8/8 answered the question asked)
+  latency  P50   26.2s   P95  109.8s   total 4.7 min
+
+ADVERSARIAL
+  block rate              2/2  100.0%
+  caught at wrong layer   0
+  FALSE POSITIVES on functional suite   0
+
+FAILURES (3) - the Day 4 taxonomy starts here
+  F05   medium  wrong rows (1 vs 1 expected)           How many orders were cancelled?
+  F07   easy    wrong rows (5 vs 5 expected)           Which 5 product categories have the most
+  F08   easy    wrong rows (1 vs 1 expected)           What is the average product weight in gr
+==================================================================

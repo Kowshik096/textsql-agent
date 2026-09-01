@@ -5,7 +5,6 @@ thing it observes is a bad trade.
 """
 
 import importlib
-import os
 
 import tracing
 

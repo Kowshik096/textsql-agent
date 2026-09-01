@@ -45,7 +45,7 @@ MAX_FALSE_POSITIVES = 0
 MAX_HARMFUL = 0
 
 
-def main(results_path: Path = None) -> int:
+def main(results_path: Path | None = None) -> int:
     """Returns 0 to pass the build, non-zero to fail it."""
     path = results_path or RESULTS
     if not path.exists():

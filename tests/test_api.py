@@ -27,7 +27,7 @@ def client(monkeypatch):
         return FakeReply("```sql\nSELECT seller_id FROM sellers LIMIT 3\n```")
 
     monkeypatch.setattr(llm, "chat", fake_chat)
-    monkeypatch.setattr(graph, "USE_PLANNER", False)
+    monkeypatch.setattr(graph, "PLANNER_MODE", "off")
     graph._GRAPH = None
     return TestClient(api.app)
 

@@ -30,6 +30,7 @@ That gives a real ceiling on execution time regardless of what the query does.
 
 from __future__ import annotations
 
+import re
 import sqlite3
 import time
 from dataclasses import dataclass
@@ -116,3 +117,83 @@ def run(sql: str, timeout_s: float = TIMEOUT_S) -> ExecResult:
         if conn is not None:
             conn.set_progress_handler(None, 0)
             conn.close()
+
+
+# --- retry hints -------------------------------------------------------------
+#
+# The taxonomy (evals/FAILURES.md, retry_exhaustion cases) showed every
+# exhausted query died on a hallucinated or ambiguous column and repeated the
+# identical error three times. Raw SQLite text names the missing column but
+# never says where the real one lives - so the hint below looks it up.
+
+_COLUMN_ERROR = re.compile(r"no such column:\s*([\w.]+)", re.IGNORECASE)
+_AMBIGUOUS_ERROR = re.compile(r"ambiguous column name:\s*([\w.]+)", re.IGNORECASE)
+_TABLE_ERROR = re.compile(r"no such table:\s*([\w.]+)", re.IGNORECASE)
+
+
+def _columns_of(conn: sqlite3.Connection, table: str) -> list:
+    return [row[1] for row in conn.execute(f"PRAGMA table_info({table});").fetchall()]
+
+
+def retry_hint(error: Optional[str]) -> Optional[str]:
+    """
+    Turn a SQLite error into a specific, checkable fact for the retry prompt.
+
+    Returns None for anything unrecognised - a generic "please try harder"
+    line would just spend tokens. The lookup runs against PRAGMA data, so it
+    can only state columns that actually exist.
+    """
+    if not error:
+        return None
+
+    table_error = _TABLE_ERROR.search(error)
+    if table_error:
+        return (
+            f"HINT: there is no table '{table_error.group(1)}'. "
+            f"Tables available: {', '.join(sorted(db.TABLES))}."
+        )
+
+    column_error = _COLUMN_ERROR.search(error)
+    ambiguous = _AMBIGUOUS_ERROR.search(error)
+    matched = column_error or ambiguous
+    if matched is None:
+        return None
+
+    token = matched.group(1)
+    column = token.split(".")[-1].lower()
+
+    conn = db.get_connection(read_only=True)
+    try:
+        found = {}
+        for table in db.TABLES:
+            cols = _columns_of(conn, table)
+            if column in [c.lower() for c in cols]:
+                found[table] = cols
+
+        if ambiguous:
+            base = (
+                f"HINT: '{token}' is ambiguous. Qualify it with the table "
+                f"name or alias."
+            )
+        elif found:
+            where = ", ".join(found)
+            base = (
+                f"HINT: there is no column '{column}' on that table. "
+                f"The column exists on: {where}."
+            )
+        else:
+            return (
+                f"HINT: no table in this database has a column called "
+                f"'{column}'. Re-check the schema above."
+            )
+
+        # Attach the real column list of a matching table - the thing the
+        # model was missing when it invented the name. Ambiguous-name errors
+        # may have no matching table (the column exists nowhere), so this is
+        # guarded.
+        if found:
+            first = min(found)
+            base += f" Columns on {first}: {', '.join(found[first])}."
+        return base
+    finally:
+        conn.close()

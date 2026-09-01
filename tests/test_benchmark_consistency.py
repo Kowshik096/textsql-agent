@@ -15,7 +15,8 @@ import yaml
 import executor
 
 SPEC = yaml.safe_load(
-    (Path(__file__).resolve().parent.parent / "evals" / "benchmark.yaml").read_text(encoding="utf-8")
+    (Path(__file__).resolve().parent.parent / "evals" / "benchmark.yaml")
+    .read_text(encoding="utf-8")
 )
 FUNCTIONAL = {c["id"]: c for c in SPEC["functional"]}
 

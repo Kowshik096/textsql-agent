@@ -14,6 +14,7 @@ Start the API first:
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -38,6 +39,27 @@ def ask(question: str):
     return requests.post(
         f"{API}/query", json={"question": question}, timeout=TIMEOUT_S
     ).json()
+
+
+def ask_stream(question: str):
+    """
+    Consume /query/stream, yielding one dict per SSE event.
+
+    Raises on any transport or HTTP error - the caller falls back to the
+    blocking endpoint, so an older API without the stream route still works.
+    """
+    with requests.post(
+        f"{API}/query/stream", json={"question": question},
+        timeout=TIMEOUT_S, stream=True,
+    ) as response:
+        response.raise_for_status()
+        for raw_line in response.iter_lines(decode_unicode=True):
+            # requests types the iteration as bytes even with decode_unicode;
+            # decode defensively rather than trust the flag.
+            line = (raw_line.decode("utf-8", errors="replace")
+                    if isinstance(raw_line, bytes) else raw_line)
+            if line and line.startswith("data: "):
+                yield json.loads(line[6:])
 
 
 # --- sidebar ----------------------------------------------------------------
@@ -83,7 +105,7 @@ EXAMPLES = [
 
 cols = st.columns(len(EXAMPLES))
 picked = None
-for col, example in zip(cols, EXAMPLES):
+for col, example in zip(cols, EXAMPLES, strict=True):
     if col.button(example[:34] + ("…" if len(example) > 34 else ""),
                   use_container_width=True):
         picked = example
@@ -97,12 +119,46 @@ if st.button("Ask", type="primary") or picked:
     elif not info:
         st.error("The API is not running.")
     else:
-        with st.spinner("Planning, generating SQL, checking, executing…"):
-            try:
-                r = ask(q)
-            except requests.RequestException as e:
-                st.error(f"Request failed: {e}")
-                r = None
+        # Streamed first: the plan and each attempt appear while the pipeline
+        # is still running, instead of one long silent spinner. Any failure
+        # (including an API too old to have the route) falls back to blocking.
+        r = None
+        progress = st.status("Working…", expanded=True)
+        try:
+            with progress:
+                attempt_lines = []
+                attempts_area = st.empty()
+                for ev in ask_stream(q):
+                    kind = ev.get("type")
+                    if kind == "plan":
+                        st.markdown(f"**Plan** — {ev['text']}")
+                    elif kind == "attempt":
+                        line = f"Attempt {ev['n']}"
+                        if ev.get("error"):
+                            line += f" — failed: `{ev['error']}`"
+                        attempt_lines.append(line)
+                        attempts_area.markdown(
+                            "\n\n".join(f"- {x}" for x in attempt_lines))
+                    elif kind == "rows":
+                        st.caption(f"{ev['row_count']} rows returned.")
+                    elif kind == "blocked":
+                        st.warning(f"Refused at the {ev['layer']} guard.")
+                    elif kind == "error":
+                        st.error(ev["detail"])
+                    elif kind == "final":
+                        r = ev["response"]
+                progress.update(label="Done", state="complete",
+                                expanded=False)
+        except requests.RequestException:
+            r = None
+
+        if r is None:
+            with st.spinner("Planning, generating SQL, checking, executing…"):
+                try:
+                    r = ask(q)
+                except requests.RequestException as e:
+                    st.error(f"Request failed: {e}")
+                    r = None
 
         if r:
             status = r["status"]
@@ -130,7 +186,7 @@ if st.button("Ask", type="primary") or picked:
 
             if r["rows"]:
                 st.dataframe(
-                    [dict(zip(r["columns"], row)) for row in r["rows"]],
+                    [dict(zip(r["columns"], row, strict=False)) for row in r["rows"]],
                     use_container_width=True, hide_index=True,
                 )
 

@@ -41,15 +41,27 @@ sys.path.insert(0, str(ROOT / "src"))
 import db          # noqa: E402
 import executor    # noqa: E402
 import graph       # noqa: E402
+import judge       # noqa: E402
 import llm         # noqa: E402
+import prompts     # noqa: E402
 
 BENCHMARK = Path(__file__).resolve().parent / "benchmark.yaml"
-CACHE_DIR = Path(__file__).resolve().parent / ".cache"
+# Overrideable so the variance runner (run_variance.py) can give each repeat
+# its own namespace instead of serving run 2 the cached answers of run 1 -
+# which would measure nothing.
+CACHE_DIR = Path(os.environ.get(
+    "HARNESS_CACHE_DIR",
+    str(Path(__file__).resolve().parent / ".cache"),
+))
 
 # Floats are compared to this many decimals. Currency sums differ in the last
 # bits depending on summation order, and a benchmark that fails on 1e-9 is a
 # benchmark nobody trusts.
 ROUND_DP = 2
+
+# The answer-quality judge is enabled per run via --judge; it requires
+# JUDGE_MODEL to name the grading model (e.g. gemini-2.5-flash-lite).
+JUDGE_ON = False
 
 
 # --- comparison -------------------------------------------------------------
@@ -83,7 +95,7 @@ def results_match(actual, expected) -> bool:
 
 # --- cache ------------------------------------------------------------------
 
-def run_key(case_id: str, case: dict = None) -> str:
+def run_key(case_id: str, case: dict | None = None) -> str:
     """
     Everything that could change the answer goes into the key.
 
@@ -102,12 +114,22 @@ def run_key(case_id: str, case: dict = None) -> str:
         hashlib.sha1(json.dumps(case, sort_keys=True, default=str).encode()).hexdigest()[:12]
         if case else "",
         llm.MODEL,
+        llm.PROVIDER,
         db.SCHEMA,
+        # Full-schema text only. A PRUNE=1 run reuses these entries only when
+        # its per-question schema happens to equal the full text - which it
+        # never does - so pruned runs are correctly a cold cache of their own.
         hashlib.sha1(db.describe_schema().encode()).hexdigest()[:12],
-        str(graph.USE_PLANNER),
+        os.environ.get("PLANNER", "1"),
         str(graph.MAX_ATTEMPTS),
         str(llm.RETRY_TEMPERATURE),
+        prompts.RETRY_MODE,
+        os.environ.get("PRUNE", "0"),
         os.environ.get("ANSWER", "1"),
+        os.environ.get("COST_GUARD", "1"),
+        # Judge verdicts live in the cached record, so flipping the judge on
+        # must not serve records that were graded by nobody.
+        judge.JUDGE_MODEL if JUDGE_ON else "",
     ]
     return hashlib.sha1("|".join(parts).encode()).hexdigest()[:16]
 
@@ -131,8 +153,9 @@ def store(case_id, record, case=None):
 def run_functional(case) -> dict:
     """Ask the agent, compare its rows against the reference query's rows."""
     reference = executor.run(" ".join(case["reference_sql"].split()), timeout_s=90)
-    if not reference.ok:
+    if not reference.ok or reference.rows is None:
         return {"id": case["id"], "error": f"reference query failed: {reference.error}"}
+    ref_rows = reference.rows
 
     started = time.perf_counter()
     calls_before = len(llm.usage.calls)
@@ -152,7 +175,7 @@ def run_functional(case) -> dict:
     # Only meaningful when the first attempt actually produced rows.
     first_pass = correct and len(attempts) == 1
 
-    return {
+    record = {
         "id": case["id"],
         "difficulty": case["difficulty"],
         "question": case["question"],
@@ -166,11 +189,43 @@ def run_functional(case) -> dict:
         "false_positive": final.get("status") == "blocked",
         "blocked_layer": (final.get("blocked") or {}).get("layer"),
         "sql": next((a["sql"] for a in reversed(attempts) if a.get("error") is None), None),
-        "expected_rows": len(reference.rows),
+        "expected_rows": len(ref_rows),
         "actual_rows": len(final.get("result") or []),
         "elapsed_s": round(time.perf_counter() - started, 1),
         "calls": len(llm.usage.calls) - calls_before,
     }
+    judge_record(case, record, final)
+    return record
+
+
+def judge_record(case: dict, record: dict, final: dict) -> None:
+    """
+    Attach the prose-quality verdict to a functional record, in place.
+
+    Only successful answers are graded - there is nothing to judge in a
+    refusal or an exhausted-retry message. A judge crash is recorded as a
+    judge error on the record, never as unfaithfulness.
+    """
+    if not (JUDGE_ON and record.get("status") == "ok"):
+        return
+    try:
+        verdict = judge.judge_answer(
+            case["question"], final.get("columns") or [],
+            final.get("result") or [], record_answer(final),
+        )
+    except Exception as e:                                  # noqa: BLE001
+        record["judge_error"] = f"{type(e).__name__}: {e}"
+        return
+    if verdict is None:
+        return
+    record["judge_faithful"] = verdict.faithful
+    record["judge_answers_question"] = verdict.answers_question
+    record["judge_issue"] = verdict.issue
+    record["judge_parse_ok"] = verdict.parse_ok
+
+
+def record_answer(final: dict) -> str:
+    return final.get("answer") or ""
 
 
 def run_adversarial(case) -> dict:
@@ -222,7 +277,7 @@ def run_adversarial(case) -> dict:
 # --- metrics ----------------------------------------------------------------
 
 def report(functional, adversarial) -> str:
-    lines = []
+    lines: list[str] = []
     add = lines.append
 
     ok = [r for r in functional if "error" not in r]
@@ -234,9 +289,12 @@ def report(functional, adversarial) -> str:
     add("=" * 66)
     add("BENCHMARK RESULTS")
     add("=" * 66)
-    add(f"model            {llm.MODEL}")
+    add(f"model            {llm.MODEL} ({llm.PROVIDER})")
+    if JUDGE_ON:
+        add(f"judge            {judge.JUDGE_MODEL} "
+            f"({judge.JUDGE_PROVIDER or llm.PROVIDER})")
     add(f"schema           {db.SCHEMA} ({len(db.TABLES)} tables)")
-    add(f"planner          {'on' if graph.USE_PLANNER else 'off'}")
+    add(f"planner          {os.environ.get('PLANNER', '1')}")
     add(f"answer writer    {'on' if os.environ.get('ANSWER', '1') != '0' else 'off'}")
     add("")
 
@@ -256,6 +314,18 @@ def report(functional, adversarial) -> str:
     retried = [r for r in ok if r["attempts"] > 1]
     add(f"  retry rate              {len(retried)}/{len(ok)}  {100*len(retried)/n:5.1f}%")
     add(f"  ungrounded answers      {sum(not r.get('grounded', True) for r in ok)}")
+
+    judged = [r for r in ok if "judge_faithful" in r]
+    if judged:
+        faithful = sum(r["judge_faithful"] for r in judged)
+        answers_q = sum(r.get("judge_answers_question", False) for r in judged)
+        broken_judge = sum(not r.get("judge_parse_ok", True) for r in ok)
+        add(f"  answer quality          {faithful}/{len(judged)} faithful  "
+            f"{100*faithful/len(judged):5.1f}%   "
+            f"({answers_q}/{len(judged)} answered the question asked)")
+        if broken_judge:
+            add(f"  judge failures          {broken_judge} unparseable verdicts "
+                "- excluded from the rate, never scored against the agent")
 
     times = sorted(r["elapsed_s"] for r in ok)
     if times:
@@ -297,15 +367,34 @@ def main():
     ap.add_argument("--no-answer", action="store_true",
                     help="skip prose generation; execution accuracy does not need it")
     ap.add_argument("--functional-only", action="store_true")
+    ap.add_argument("--tag", default="",
+                    help="write results_<tag>.json/txt instead of results.json "
+                         "- ablation runs must not overwrite committed evidence")
+    ap.add_argument("--benchmark", default=None,
+                    help="alternate case file (e.g. an external-benchmark yaml); "
+                         "defaults to benchmark.yaml")
+    ap.add_argument("--judge", action="store_true",
+                    help="grade answer prose with an LLM judge "
+                         "(requires JUDGE_MODEL, e.g. gemini-2.5-flash-lite)")
     args = ap.parse_args()
+
+    global JUDGE_ON
+    if args.judge:
+        if not judge.ENABLED:
+            print("--judge set but JUDGE_MODEL is empty - nothing to grade with")
+            return 1
+        JUDGE_ON = True
 
     if args.no_answer:
         os.environ["ANSWER"] = "0"
         graph.GENERATE_ANSWER = False
 
-    spec = yaml.safe_load(BENCHMARK.read_text(encoding="utf-8"))
+    spec = yaml.safe_load(Path(args.benchmark or BENCHMARK).read_text(encoding="utf-8"))
     functional = spec["functional"]
-    adversarial = [] if args.functional_only else spec["adversarial"]
+    # External sets are functional-only by construction - Spider has no
+    # adversarial cases, and inventing attacks against someone else's schema
+    # is a different exercise.
+    adversarial = [] if args.functional_only else spec.get("adversarial", [])
 
     if args.smoke:
         functional = functional[:8]
@@ -313,9 +402,12 @@ def main():
 
     total = len(functional) + len(adversarial)
     print(f"running {len(functional)} functional + {len(adversarial)} adversarial "
-          f"| model={llm.MODEL} schema={db.SCHEMA} planner={graph.USE_PLANNER}\n")
+          f"| model={llm.MODEL} schema={db.SCHEMA} "
+          f"planner={os.environ.get('PLANNER', '1')} "
+          f"retry={prompts.RETRY_MODE} prune={os.environ.get('PRUNE', '0')}\n")
 
-    f_results, a_results = [], []
+    f_results: list[dict] = []
+    a_results: list[dict] = []
     started = time.perf_counter()
 
     for i, case in enumerate(functional + adversarial, start=1):
@@ -341,10 +433,13 @@ def main():
     text = report(f_results, a_results)
     print("\n" + text)
 
-    out = Path(__file__).resolve().parent / "results.json"
+    suffix = f"_{args.tag}" if args.tag else ""
+    out = Path(__file__).resolve().parent / f"results{suffix}.json"
     out.write_text(json.dumps(
         {"functional": f_results, "adversarial": a_results,
-         "model": llm.MODEL, "schema": db.SCHEMA, "planner": graph.USE_PLANNER},
+         "model": llm.MODEL, "schema": db.SCHEMA,
+         "planner": os.environ.get("PLANNER", "1"),
+         "retry_mode": prompts.RETRY_MODE},
         indent=2, default=str), encoding="utf-8")
     (out.with_suffix(".txt")).write_text(text, encoding="utf-8")
     print(f"\nwritten to {out.name} and {out.with_suffix('.txt').name}")

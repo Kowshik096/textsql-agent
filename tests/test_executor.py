@@ -2,10 +2,6 @@
 Executor behaviour: results out, errors as text, and a real time ceiling.
 """
 
-import sqlite3
-
-import pytest
-
 import executor
 
 

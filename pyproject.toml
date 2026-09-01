@@ -1,0 +1,50 @@
+# Tool configuration for ruff (lint) and mypy (types).
+#
+# Scope is deliberately conservative: the rules that catch real bugs and
+# drift (unused imports/variables, undefined names, obvious style breaks)
+# without churning a codebase whose comments run long by design.
+# Anything stricter should be adopted by fixing the code first, not by
+# widening this file.
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+# evals/external holds the fetched Spider dataset, whose database folders
+# vendor third-party python utilities - linting those is not our job.
+extend-exclude = ["sqlagent_env", "data", "charts", "evals/external"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes - unused imports/variables, undefined names
+    "B",   # flake8-bugbear - likely bugs
+]
+
+[tool.ruff.lint.per-file-ignores]
+# The src modules are imported flat (`import db`) because sys.path points at
+# src/ at runtime; E402 (import not top) fires on the sys.path bootstrap that
+# makes that work and on __main__ demo blocks after executable code.
+"src/*.py" = ["E402"]
+"evals/*.py" = ["E402"]
+"tests/*.py" = ["E402"]
+# prompts.py and judge.py contain model-visible string bytes. Reflowing a
+# long line changes what the model sees (and the eval cache key), and a
+# `# noqa` on a line inside a triple-quoted prompt would itself become part
+# of the prompt. So overlong prompt lines are tolerated here rather than
+# rewritten.
+"src/prompts.py" = ["E501"]
+"src/judge.py" = ["E501"]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["src", "scripts", "app.py", "evals/harness.py"]
+# The agent stack talks to libraries shipping no type information
+# (ollama client, langgraph internals). Re-enabling per-module once stubs
+# exist beats failing the build on third-party absence today.
+ignore_missing_imports = true
+# Untyped defs stay allowed: the graph nodes return plain dicts by design,
+# and demanding annotations everywhere would add noise, not safety.
+check_untyped_defs = true
+warn_unused_ignores = true
+no_implicit_optional = true

@@ -10,14 +10,25 @@ makes those changes greppable and diffable rather than scattered across nodes.
 
 from __future__ import annotations
 
-from typing import Optional, Sequence
+import os
+from typing import Any, Mapping, Optional, Sequence
+
+# --- retry prompt variants ---------------------------------------------------
+#
+# RETRY_MODE selects what a retry sees of its own history:
+#   full       - every failed SQL + its error (the committed configuration)
+#   error_only - the errors only; the failed SQL is withheld on the theory
+#                that showing it invites copying it (README diagnosis)
+#   hint       - full, plus executor.retry_hint() facts for the last error
+# Default stays 'full' until the measurement checkpoint says otherwise.
+RETRY_MODE = os.environ.get('RETRY_MODE', 'full').strip().lower()
 
 # --- planner ----------------------------------------------------------------
 #
 # The planner exists to split "work out what data is needed" from "write
 # correct syntax", because models do both worse when doing them at once.
 # Whether that pays for its ~11s on a 3B model is an open question, settled
-# by the Day 4 ablation - see USE_PLANNER in graph.py.
+# by the Day 4 ablation - see PLANNER_MODE in graph.py.
 
 PLANNER_SYSTEM = """You are a data analyst planning how to answer a question from a SQLite database.
 
@@ -46,17 +57,46 @@ Rules:
 - Always add a LIMIT unless the question asks for a single aggregate value."""
 
 
+def build_history_block(history) -> str:
+    """
+    Render prior session turns so follow-ups can be answered in place.
+
+    Only question + SQL + columns are shown - never rows. Rows would let a
+    follow-up answer from stale numbers instead of re-querying, which is
+    exactly the silent-wrongness class this project exists to prevent.
+    """
+    if not history:
+        return ""
+    lines = ["CONVERSATION CONTEXT - earlier turns of this session. "
+             "If the question refers back (\"it\", \"that\", \"per year\"), "
+             "resolve it against these:"]
+    for i, turn in enumerate(history, start=1):
+        lines.append(f"\nTurn {i} QUESTION: {turn.get('question', '')}")
+        lines.append(f"Turn {i} SQL: {turn.get('sql', '')}")
+        cols = ", ".join(turn.get("columns") or [])
+        if cols:
+            lines.append(f"Turn {i} COLUMNS: {cols}")
+    return "\n".join(lines)
+
+
 def build_generator_prompt(
     schema: str,
     question: str,
     plan: Optional[str] = None,
-    attempts: Sequence[dict] = (),
+    # Mapping[str, Any], not a narrower value type: the caller passes the
+    # graph's Attempt TypedDict, and PEP 589 makes those compatible with
+    # Mapping[str, object] only.
+    attempts: Sequence[Mapping[str, Any]] = (),
+    retry_mode: Optional[str] = None,
+    retry_hint: Optional[str] = None,
+    history: Optional[Sequence[Mapping[str, Any]]] = None,
 ) -> str:
     """
     Assemble the generator's user message.
 
     On the first pass this is schema + question (+ plan). On a retry it also
-    carries every previous attempt and the error it produced.
+    carries every previous attempt and the error it produced - in whatever
+    shape RETRY_MODE (or the explicit `retry_mode` argument) selects.
 
     Why the error text has to be here at all:
 
@@ -75,7 +115,12 @@ def build_generator_prompt(
         Day 2 at roughly 90 tokens across three attempts on top of a 966-token
         schema prompt, peaking at 13% of num_ctx 8192.
     """
+    mode = (retry_mode or RETRY_MODE).lower()
     parts = [schema, f"QUESTION: {question}"]
+
+    history_block = build_history_block(history)
+    if history_block:
+        parts.append(history_block)
 
     if plan:
         parts.append(f"PLAN:\n{plan}")
@@ -84,12 +129,21 @@ def build_generator_prompt(
         lines = ["PREVIOUS ATTEMPTS - all failed. Do not repeat them:"]
         for i, attempt in enumerate(attempts, start=1):
             lines.append(f"\nAttempt {i}:")
-            lines.append(f"  SQL:   {attempt['sql']}")
+            if mode != "error_only":
+                lines.append(f"  SQL:   {attempt['sql']}")
             lines.append(f"  Error: {attempt['error']}")
-        lines.append(
-            "\nWrite a DIFFERENT query that fixes the error above. "
-            "Check column names against the schema."
-        )
+        if mode == "error_only":
+            lines.append(
+                "\nWrite a DIFFERENT query that fixes the errors above. "
+                "The previous SQL text is withheld so it cannot anchor you."
+            )
+        else:
+            lines.append(
+                "\nWrite a DIFFERENT query that fixes the error above. "
+                "Check column names against the schema."
+            )
+        if retry_hint:
+            lines.append(f"\n{retry_hint}")
         parts.append("\n".join(lines))
 
     parts.append("SQL:")

@@ -143,6 +143,12 @@ def check(sql: str) -> GuardResult:
         )
 
     tree = statements[0]
+    if tree is None:
+        # Unreachable after the filter above, but the type system cannot see
+        # through list indexing - and an explicit refusal here is cheaper
+        # than an AttributeError at the walk below.
+        return GuardResult(False, reason="no SQL statement found",
+                           category="correctable")
 
     # 3. no write or command node anywhere in the tree
     for node in tree.walk():
@@ -189,13 +195,17 @@ def check(sql: str) -> GuardResult:
     return GuardResult(True, sql=_apply_row_limit(tree))
 
 
-def _apply_row_limit(tree: exp.Expression) -> str:
+def _apply_row_limit(tree: exp.Query) -> str:
     """
     Cap the number of rows returned.
 
     Rewriting the query is the point: a LIMIT the model was asked to include
     is a suggestion, a LIMIT we add to the parsed tree is a fact. An existing
     smaller limit is left alone, so "top 5 sellers" still returns five.
+
+    `exp.Query` is the common base of every ALLOWED_ROOTS member - Select,
+    the set operations and Subquery - which is exactly the set this function
+    may be handed.
     """
     existing = tree.args.get("limit")
     if existing is not None:

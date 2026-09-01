@@ -63,7 +63,7 @@ def _looks_like_a_series(labels) -> bool:
     Ordered periods - 2017, 2017-05 - read better as a line than as bars,
     because the eye is being asked about a trend rather than a ranking.
     """
-    return all(_DATE_LIKE.match(str(l)) for l in labels)
+    return all(_DATE_LIKE.match(str(label)) for label in labels)
 
 
 def render(question: str, columns: Sequence[str], rows: Sequence,
@@ -80,6 +80,8 @@ def render(question: str, columns: Sequence[str], rows: Sequence,
             return None
 
         value_index = _numeric_index(rows)
+        if value_index is None:
+            return None
         labels = [str(r[0])[:LABEL_CHARS] for r in rows]
         values = [float(r[value_index]) for r in rows]
 
