@@ -35,6 +35,9 @@ from typing import Optional
 
 import db
 
+import sqlglot
+from sqlglot import exp
+
 # Tables at or above this row count count toward the cartesian signature.
 # order_items (112k) and orders (99k) sit far above it; sellers (3k) and
 # everything smaller sit far below - which matches where the real failures
@@ -42,6 +45,34 @@ import db
 LARGE_TABLE_MIN = 50_000
 
 _SCAN_RE = re.compile(r"SCAN\s+([A-Za-z_][\w]*)")
+
+
+def _alias_map(sql: str) -> dict:
+    """
+    Alias (lower) -> real table (lower) for one query.
+
+    EXPLAIN QUERY PLAN prints the alias, not the table: `FROM order_items a`
+    shows up as `SCAN a`. Comparing that against table names misses every
+    aliased cartesian - which is most of them, since the model aliases
+    habitually (T1, T2, oi, o). Resolve aliases through the parsed query so
+    the scan check sees tables, not nicknames.
+
+    Empty on parse failure: an unparseable query cannot be executed either,
+    and the SQL guard / executor own that failure, not this check.
+    """
+    try:
+        tree = sqlglot.parse_one(sql, read="sqlite")
+    except Exception:
+        return {}
+    if tree is None:
+        return {}
+    mapping = {}
+    for table in tree.find_all(exp.Table):
+        name = (table.name or "").lower()
+        alias = (table.alias_or_name or "").lower()
+        if name and alias and alias != name:
+            mapping[alias] = name
+    return mapping
 
 
 @dataclass
@@ -90,17 +121,24 @@ def check(sql: str, conn: Optional[sqlite3.Connection] = None) -> CostVerdict:
     assert conn is not None
     try:
         counts = _row_counts(conn)
-        large = {t for t, n in counts.items() if n >= LARGE_TABLE_MIN}
+        large = {t.lower() for t, n in counts.items() if n >= LARGE_TABLE_MIN}
+        aliases = _alias_map(sql)
 
-        large_scans = set()
+        large_scans: list[str] = []
         for row in _plan_lines(conn, sql):
             detail = row[3] if len(row) > 3 else str(row)
             for match in _SCAN_RE.finditer(detail):
-                if match.group(1).lower() in large:
-                    large_scans.add(match.group(1).lower())
+                scanned = match.group(1).lower()
+                # The plan names the alias; the inventory names the table.
+                resolved = aliases.get(scanned, scanned)
+                if resolved in large:
+                    # Counted per scan, not per distinct table: a self-join
+                    # (`FROM order_items a, order_items b`) nests two full
+                    # scans of the SAME table and is just as cartesian.
+                    large_scans.append(resolved)
 
         if len(large_scans) >= 2:
-            names = ", ".join(sorted(large_scans))
+            names = ", ".join(sorted(set(large_scans)))
             return CostVerdict(
                 ok=False,
                 reason=(

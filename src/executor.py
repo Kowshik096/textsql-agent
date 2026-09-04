@@ -113,6 +113,18 @@ def run(sql: str, timeout_s: float = TIMEOUT_S) -> ExecResult:
             elapsed_s=time.perf_counter() - started,
         )
 
+    except OSError as e:
+        # db.get_connection() raises FileNotFoundError when the database
+        # file is missing, and OSError covers disk/full/read-only filesystem.
+        # Without this the function raises, breaking its "never raises"
+        # contract and crashing the agent instead of returning an error
+        # string the retry loop can act on.
+        return ExecResult(
+            ok=False,
+            error=f"{type(e).__name__}: {e}",
+            elapsed_s=time.perf_counter() - started,
+        )
+
     finally:
         if conn is not None:
             conn.set_progress_handler(None, 0)

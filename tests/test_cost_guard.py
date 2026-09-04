@@ -62,6 +62,29 @@ def test_cartesian_over_two_large_tables_is_refused(big_db):
     assert "cartesian" in v.reason
 
 
+def test_aliased_cartesian_over_large_tables_is_refused(big_db):
+    """
+    EXPLAIN QUERY PLAN prints the alias, not the table (`SCAN a`), so a
+    naive name comparison misses every aliased cartesian - which is most of
+    them, since the model aliases habitually (T1/T2, oi/o). Same shape as
+    the Day 2 incident, only nicknamed.
+    """
+    conn, _ = big_db
+    v = _check_with_threshold(
+        conn, "SELECT COUNT(*) FROM order_items a, order_items b", 100)
+    assert not v.ok, "aliased self-cartesian passed the cost guard"
+    assert v.large_scans >= 2
+    assert "cartesian" in v.reason
+
+
+def test_aliased_cartesian_mixed_tables_is_refused(big_db):
+    conn, _ = big_db
+    v = _check_with_threshold(
+        conn, "SELECT * FROM order_items oi, orders o", 100)
+    assert not v.ok, "aliased mixed cartesian passed the cost guard"
+    assert v.large_scans >= 2
+
+
 def test_equi_join_gets_auto_indexes_and_passes(big_db):
     conn, _ = big_db
     v = _check_with_threshold(

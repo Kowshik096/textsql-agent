@@ -119,3 +119,15 @@ def test_extract_numbers(text, expected):
 def test_dates_in_string_cells_ground_their_parts():
     rows = [("2017-05-16", 42)]
     assert grounding.check("The earliest order was in 2017.", rows, "").ok
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
+def test_non_finite_row_values_never_raise(bad):
+    """
+    A guardrail must never raise: inf/nan in a result cell (e.g. from
+    SELECT 9e999) used to crash _matches via round()/log10(), turning a
+    hostile query into a pipeline 500 instead of a grounded fallback.
+    """
+    r = grounding.check("The total is 500 items.", [(bad,)], "how many?")
+    assert not r.ok
+    assert 500.0 in r.ungrounded

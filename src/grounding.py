@@ -97,7 +97,15 @@ def _matches(candidate: float, source: float) -> bool:
     module exists to catch - the tolerance has to absorb formatting, not
     magnitude. Significant-figure rounding does, because 198,450 is not any
     sig-fig rounding of 200,326 while 229,000 is one of 229,237.63.
+
+    Non-finite sources (inf/nan in a result cell, e.g. from SELECT 9e999)
+    never match approximately: round() and log10() raise on them, and this
+    check must never raise - it is a guardrail, and a guardrail that crashes
+    the pipeline on hostile input is worse than none. Only exact equality
+    counts there (inf == inf grounds; nan never does).
     """
+    if not math.isfinite(candidate) or not math.isfinite(source):
+        return candidate == source
     if candidate == source:
         return True
     if abs(candidate - source) < 1e-9:
