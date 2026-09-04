@@ -44,9 +44,14 @@ evals/results_var*.txt
 
 # --- external benchmark payloads (Spider; fetched, not authored) ----------
 # The generated yaml files ARE committed evidence; the 200 MB dataset and
-# extracted databases are reproducible via evals/fetch_spider.py.
+# extracted databases are reproducible via evals/fetch_spider.py:
+#     python evals/fetch_spider.py
+# (spider.zip, or the manual download it documents, provides dev.json plus
+# the per-database sqlite files - including multi-hundred-MB ones GitHub
+# refuses. Keep them local; never commit them.)
 evals/external/spider.zip
 evals/external/_extract/
+evals/external/spider/database/
 
 # Langfuse exports. Trace data carries the questions asked and the model's
 # answers, which is not repo content, and the files run to several MB.

@@ -395,6 +395,9 @@ evals/
   benchmark.yaml  63 functional + 15 adversarial cases
   POLICY.md       the semantic decisions behind the ground truth
   harness.py      runs the suite, computes the metrics
+  fetch_spider.py restores evals/external/spider/database/ (~1 GB, gitignored)
+                  for the optional external validation
+                  (benchmark_external_car_1.yaml); CI never needs it.
 ```
 
 [DECISIONS.md](DECISIONS.md) explains why each of these is built the way it is.
