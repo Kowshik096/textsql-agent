@@ -11,7 +11,7 @@ trade, and a project whose whole argument is layered safety should not make
 its own agent depend on a telemetry service being reachable.
 
 It also means CI and the benchmark run untraced without special handling, and
-the 114 tests exercise the same code path either way.
+the 223 tests exercise the same code path either way.
 
 What a trace contains, once enabled:
 

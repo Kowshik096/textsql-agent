@@ -201,7 +201,7 @@ pip install -r requirements.lock.txt
 ollama pull qwen2.5-coder:3b
 ```
 
-Put the four [Olist CSVs][olist] in `data/` (see [data/README.md](data/README.md)),
+Put the seven [Olist CSVs][olist] in `data/` (see [data/README.md](data/README.md)),
 then:
 
 ```bash
@@ -252,7 +252,7 @@ python evals/harness.py            # add --smoke for 10 cases
 ## Tests and the quality gate
 
 ```bash
-pytest tests/ -q                   # 119 tests
+pytest tests/ -q                   # 223 tests
 python scripts/check_gate.py       # the CI gate
 ```
 
@@ -327,7 +327,7 @@ Three things in that table are worth more than the latency numbers.
 guard blocked 16 questions and the SQL guard blocked *zero* — every adversarial
 input was caught before a model call happened. That is defence-in-depth working
 as intended, and it is exactly why the SQL guard is tested with the input guard
-**disabled** (`tests/test_layers.py`). A layer that never fires in normal
+**disabled** (`tests/test_agent_loop.py`). A layer that never fires in normal
 operation has no evidence behind it unless something deliberately exercises it.
 
 **Prompt tokens are 21x output tokens** — 1,080 in, 51 out. The schema
