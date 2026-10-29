@@ -45,7 +45,9 @@ flowchart LR
     P --> G[SQL generator]
     G --> SG{{SQL guard<br/>sqlglot AST}}
     SG -->|refused| OUT
-    SG --> EX[(Read-only<br/>executor)]
+    SG --> CG{{Cost guard<br/>EXPLAIN QUERY PLAN}}
+    CG -->|cartesian| G
+    CG --> EX[(Read-only<br/>executor)]
     EX -->|error| G
     EX --> V[Verifier]
     V --> OG{{Grounding check}}
@@ -53,6 +55,7 @@ flowchart LR
 
     style IG fill:#4a2f2f,stroke:#c0392b,color:#fff
     style SG fill:#4a2f2f,stroke:#c0392b,color:#fff
+    style CG fill:#4a2f2f,stroke:#c0392b,color:#fff
     style OG fill:#4a2f2f,stroke:#c0392b,color:#fff
 ```
 
@@ -68,13 +71,16 @@ error text, not a flag, and that is the whole mechanism.
 
 ## Guardrails
 
-Four layers. Each has a test that **disables the layer above it**, because a
-guardrail never tested without its predecessor is an assumption, not a layer.
+Five layers. The original four each have a test that **disables the layer
+above it**, because a guardrail never tested without its predecessor is an
+assumption, not a layer. The cost guard, added later, has its own suite
+(`tests/test_cost_guard.py`).
 
 | Layer | Where | Catches |
 |---|---|---|
 | **Input** | before any model call | injection phrasings, off-topic questions |
-| **SQL** | between generation and execution | writes, stacked statements, off-schema tables |
+| **SQL** | between generation and execution | writes, stacked statements, off-schema tables (sqlglot AST + table allowlist) |
+| **Cost** | after the SQL guard, before execution | cartesian joins — nested full scans on large tables in `EXPLAIN QUERY PLAN` — refused *without running them* and sent back to the generator |
 | **Output** | before the answer returns | numbers that are not in the result set |
 | **Connection** | SQLite itself | opened `?mode=ro` |
 
@@ -138,9 +144,43 @@ Which is mechanically sensible: decomposing "which customer states have the
 highest average order value" into a plan helps. Doing the same to "how many
 sellers are there" gives the generator one more chance to be led astray.
 
-Kept on, because accuracy is the headline metric here. A latency-sensitive
-deployment should route it instead — plan only when the question needs a join.
-`PLANNER=0` runs the other configuration.
+Kept on for the headline numbers above. `PLANNER=0` runs the other
+configuration.
+
+### Routing the planner (`PLANNER=auto`)
+
+The ablation says the planner should be routed, not switched: plan only when
+the question needs a join. `PLANNER=auto` does that with a keyword router
+(`db.suggests_join`) - plan when two tables are named, or when comparison
+phrasing sits on top of a table match. The rules were fitted against the
+per-case flips between the planner-on and planner-off runs.
+
+| | planner on | planner off | **auto (router)** |
+|---|---|---|---|
+| Execution accuracy | 44.4% | 41.3% | **47.6%** |
+| easy | 84.6% | 84.6% | 84.6% |
+| medium | 40.9% | 45.5% | **50.0%** |
+| hard | **28.6%** | 17.9% | **28.6%** |
+| Retry rate | 14.3% | 14.3% | 12.7% |
+| False positives | 0 | 0 | **0** |
+| Latency P50 / P95 | 38.4s / 80.5s | 12.7s / 44.0s | 15.3s / 55.7s |
+
+**The router is best or tied-best on every tier.** It keeps the planner's
+hard-tier gain, recovers the medium tier the planner was losing, and runs at
+2.5x lower P50 latency than planning everything.
+
+Read this with two caveats, because the run is not a pure ablation:
+
+- **It is on later code.** The auto run (`evals/results_auto.txt`) came after
+  the schema notes from the failure taxonomy, retry hints and the cost guard
+  landed, so some of the +3.2 points over planner-on belong to those changes,
+  not to routing alone.
+- **The answer writer was off,** which removes one model call per question.
+  Part of the latency gap is that call, not the router.
+
+First-pass accuracy equals final accuracy in this run (30/63): the retry loop
+recovered nothing, consistent with the finding below. The adversarial suite had
+grown to 30 cases by then; 24 were blocked, 0 executed harmfully.
 
 ### Model size: 3B vs 1.5B
 
@@ -364,7 +404,7 @@ of hidden.
 
 Not production-grade:
 
-- **44.4% accuracy.** Nobody ships a data agent that is wrong more often than
+- **44-48% accuracy.** Nobody ships a data agent that is wrong more often than
   right. Closing that means a larger model.
 - **No authentication or authorisation.** SELECT-only and a table allowlist say
   nothing about *column*-level permissions.
@@ -372,7 +412,8 @@ Not production-grade:
 - **Prompt injection is not solved.** The input filter catches known phrasings.
   The honest defence is that layer 2 does not trust layer 1.
 - **The 10s query timeout can fail correct SQL** that happens to be a
-  correlated subquery over an unindexed column.
+  correlated subquery over an unindexed column. The cost guard catches the
+  cartesian case before execution; it does not catch this one.
 
 ---
 
@@ -385,6 +426,7 @@ src/
   prompts.py      every prompt, in one file
   input_guard.py  layer 1
   sql_guard.py    layer 2 — sqlglot AST checks
+  cost_guard.py   fifth guardrail — EXPLAIN QUERY PLAN cartesian check
   executor.py     read-only execution with a real timeout
   grounding.py    layer 3 — numeric grounding
   graph.py        the LangGraph agent loop
